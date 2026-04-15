@@ -88,6 +88,12 @@ def search_remoteok(queries: list[str]) -> Generator[dict, None, None]:
                         re.sub(r"<[^>]+>", " ", item.get("description", ""))
                     ),
                 }
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in (403, 429):
+                raise RateLimited("RemoteOK")
+            print(f"  [RemoteOK] Error for '{query}': {e}")
+        except RateLimited:
+            raise
         except Exception as e:
             print(f"  [RemoteOK] Error for '{query}': {e}")
         time.sleep(1)
@@ -140,10 +146,12 @@ def search_arbeitnow(queries: list[str]) -> Generator[dict, None, None]:
                 page += 1
                 time.sleep(2)  # be polite to avoid rate limiting
             except httpx.HTTPStatusError as e:
-                if e.response.status_code == 403:
-                    break  # rate limited — stop quietly, move to next query
+                if e.response.status_code in (403, 429):
+                    raise RateLimited("Arbeitnow")
                 print(f"  [Arbeitnow] Error for '{query}' page {page}: {e}")
                 break
+            except RateLimited:
+                raise
             except Exception as e:
                 print(f"  [Arbeitnow] Error for '{query}' page {page}: {e}")
                 break
@@ -377,6 +385,12 @@ def search_remotive(queries: list[str]) -> Generator[dict, None, None]:
                     "url": jurl,
                     "description": desc,
                 }
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in (403, 429):
+                raise RateLimited("Remotive")
+            print(f"  [Remotive] Error for '{query}': {e}")
+        except RateLimited:
+            raise
         except Exception as e:
             print(f"  [Remotive] Error for '{query}': {e}")
         time.sleep(1)
@@ -416,6 +430,12 @@ def search_jobicy(queries: list[str]) -> Generator[dict, None, None]:
                     "url": jurl,
                     "description": desc,
                 }
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in (403, 429):
+                raise RateLimited("Jobicy")
+            print(f"  [Jobicy] Error for '{query}': {e}")
+        except RateLimited:
+            raise
         except Exception as e:
             print(f"  [Jobicy] Error for '{query}': {e}")
         time.sleep(1)
@@ -574,6 +594,12 @@ def search_himalayas(queries: list[str]) -> Generator[dict, None, None]:
                     "url": jurl,
                     "description": desc,
                 }
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in (403, 429):
+                raise RateLimited("Himalayas")
+            print(f"  [Himalayas] Error for '{query}': {e}")
+        except RateLimited:
+            raise
         except Exception as e:
             print(f"  [Himalayas] Error for '{query}': {e}")
         time.sleep(1)
@@ -583,6 +609,11 @@ def search_himalayas(queries: list[str]) -> Generator[dict, None, None]:
 # Main search function
 # ---------------------------------------------------------------------------
 
+class RateLimited(Exception):
+    """Raised by a source function when it hits a rate limit."""
+    pass
+
+
 def search_all_sources(
     queries: list[str],
     sources: list[str] | None = None,
@@ -590,14 +621,8 @@ def search_all_sources(
 ) -> list[dict]:
     """
     Search all enabled sources and return de-duplicated job listings.
-
-    Args:
-        queries: list of job title / keyword queries
-        sources: list of source names to use (default: all)
-        remote_only: filter to remote-only jobs
-
-    Returns:
-        list of job dicts ready to insert into DB
+    If a source is rate-limited it is moved to the back of the queue
+    and retried once after all other sources finish (with a 30s wait).
     """
     all_sources = ["remoteok", "arbeitnow", "themuse", "adzuna", "hn", "remotive", "jobicy",
                    "weworkremotely", "workingnomads", "himalayas"]
@@ -613,48 +638,53 @@ def search_all_sources(
                 seen_urls.add(url)
                 jobs.append(job)
 
-    if "remoteok" in enabled:
-        print("  Searching RemoteOK...")
-        add(search_remoteok(queries))
+    # Map name -> (label, function, extra_check)
+    source_map = {
+        "remoteok":       ("RemoteOK",          lambda: search_remoteok(queries),       True),
+        "arbeitnow":      ("Arbeitnow",          lambda: search_arbeitnow(queries),      True),
+        "themuse":        ("The Muse",           lambda: search_themuse(queries),        True),
+        "adzuna":         ("Adzuna",             lambda: search_adzuna(queries),         bool(os.environ.get("ADZUNA_APP_ID"))),
+        "hn":             ("HN Who's Hiring",    lambda: search_hn_hiring(queries),      True),
+        "remotive":       ("Remotive",           lambda: search_remotive(queries),       True),
+        "jobicy":         ("Jobicy",             lambda: search_jobicy(queries),         True),
+        "weworkremotely": ("We Work Remotely",   lambda: search_weworkremotely(queries), True),
+        "workingnomads":  ("Working Nomads",     lambda: search_workingnomads(queries),  True),
+        "himalayas":      ("Himalayas",          lambda: search_himalayas(queries),      True),
+    }
 
-    if "arbeitnow" in enabled:
-        print("  Searching Arbeitnow...")
-        add(search_arbeitnow(queries))
+    # Build ordered queue of sources to run
+    queue = [name for name in all_sources if name in enabled]
+    retried: set[str] = set()
 
-    if "themuse" in enabled:
-        print("  Searching The Muse...")
-        add(search_themuse(queries))
+    while queue:
+        name = queue.pop(0)
+        label, fn, check = source_map[name]
 
-    if "adzuna" in enabled:
-        if os.environ.get("ADZUNA_APP_ID"):
-            print("  Searching Adzuna...")
-            add(search_adzuna(queries))
-        else:
-            print("  Skipping Adzuna (no API key in .env)")
+        if not check:
+            print(f"  Skipping {label} (no API key in .env)")
+            continue
 
-    if "hn" in enabled:
-        print("  Searching HN Who's Hiring...")
-        add(search_hn_hiring(queries))
+        is_retry = name in retried
+        print(f"  Searching {label}{'  [retry]' if is_retry else ''}...")
 
-    if "remotive" in enabled:
-        print("  Searching Remotive...")
-        add(search_remotive(queries))
+        try:
+            add(fn())
+        except RateLimited:
+            if not is_retry:
+                # Move to end of queue and retry once after everything else
+                print(f"  [{label}] Rate limited — will retry after other sources...")
+                retried.add(name)
+                queue.append(name)
+                time.sleep(2)
+            else:
+                print(f"  [{label}] Still rate limited on retry — skipping.")
+        except Exception as e:
+            print(f"  [{label}] Error: {e}")
 
-    if "jobicy" in enabled:
-        print("  Searching Jobicy...")
-        add(search_jobicy(queries))
-
-    if "weworkremotely" in enabled:
-        print("  Searching We Work Remotely...")
-        add(search_weworkremotely(queries))
-
-    if "workingnomads" in enabled:
-        print("  Searching Working Nomads...")
-        add(search_workingnomads(queries))
-
-    if "himalayas" in enabled:
-        print("  Searching Himalayas...")
-        add(search_himalayas(queries))
+        # If we just finished the main sources and retries are next, wait a bit
+        if queue and queue[0] in retried and len([q for q in queue if q not in retried]) == 0:
+            print(f"  Waiting 30s before retrying rate-limited sources...")
+            time.sleep(30)
 
     if remote_only:
         keywords = {"remote", "anywhere", "worldwide", "distributed", "wfh"}
