@@ -138,7 +138,12 @@ def search_arbeitnow(queries: list[str]) -> Generator[dict, None, None]:
                         "description": desc,
                     }
                 page += 1
-                time.sleep(0.5)
+                time.sleep(2)  # be polite to avoid rate limiting
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 403:
+                    break  # rate limited — stop quietly, move to next query
+                print(f"  [Arbeitnow] Error for '{query}' page {page}: {e}")
+                break
             except Exception as e:
                 print(f"  [Arbeitnow] Error for '{query}' page {page}: {e}")
                 break
