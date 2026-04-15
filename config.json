@@ -1,0 +1,20 @@
+{
+  "job_titles": [
+    "Backend Developer",
+    "Python Developer",
+    "Software Engineer",
+    "FastAPI Developer",
+    "Backend Engineer"
+  ],
+  "remote_only": false,
+  "match_threshold": 70,
+  "profile": {
+    "name": "Liel Cochabi",
+    "email": "lielcochabi@gmail.com",
+    "phone": "+972 523315195",
+    "city": "Israel",
+    "linkedin_handle": "",
+    "website": "https://github.com/lielcochabi",
+    "summary": "Third-year Computer Science student at HIT with hands-on experience building backend systems and data-driven services. Experienced in designing APIs, handling real data flows, and integrating AI components into scalable application workflows."
+  }
+}

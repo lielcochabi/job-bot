@@ -1,0 +1,10 @@
+.env
+*.db
+*.db-journal
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+manual_apply.csv
+jobs_to_score.json
+score_jobs.py

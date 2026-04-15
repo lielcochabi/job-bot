@@ -1,0 +1,492 @@
+"""
+Search multiple job boards and return raw job listings.
+Sources:
+  1. RemoteOK (free, no auth, remote jobs)
+  2. Arbeitnow (free, EU + remote)
+  3. The Muse (free, no auth)
+  4. Adzuna (free tier, needs ADZUNA_APP_ID + ADZUNA_API_KEY)
+  5. Hacker News "Who's Hiring" (latest monthly thread)
+"""
+from __future__ import annotations
+
+import html
+import json
+import os
+import re
+import time
+from typing import Generator
+
+import httpx
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                  "Chrome/122.0.0.0 Safari/537.36"
+}
+
+# Keywords that must appear in title OR description for a job to pass the tech filter
+_TECH_TITLE_KEYWORDS = {
+    "python", "backend", "back-end", "software", "developer", "engineer",
+    "fastapi", "django", "flask", "devops", "cloud", "fullstack", "full-stack",
+    "node.js", "golang", "typescript", "react", "data engineer", "data scientist",
+    "machine learning", "ml engineer", "ai engineer", "infrastructure", "sre",
+    "platform engineer", "microservices", "kubernetes", "programmer", "coder",
+    "architect", "tech lead", "engineering manager", "r&d", "it specialist",
+    "it engineer", "it infrastructure", "working student", "intern",
+}
+
+_TECH_DESC_KEYWORDS = {
+    "python", "backend", "fastapi", "django", "flask", "postgresql", "redis",
+    "microservices", "rest api", "graphql", "docker", "kubernetes", "ci/cd",
+}
+
+def _is_tech_job(title: str, description: str) -> bool:
+    """
+    Return True if:
+    - The title contains a tech keyword, OR
+    - The title contains a generic tech hint AND description confirms it
+    """
+    title_lower = title.lower()
+    # Direct tech title match
+    if any(kw in title_lower for kw in _TECH_TITLE_KEYWORDS):
+        return True
+    # Fallback: description must have strong tech signal
+    desc_lower = description[:500].lower()
+    return any(kw in desc_lower for kw in _TECH_DESC_KEYWORDS)
+
+
+# ---------------------------------------------------------------------------
+# Source 1: RemoteOK
+# ---------------------------------------------------------------------------
+
+def search_remoteok(queries: list[str]) -> Generator[dict, None, None]:
+    """https://remoteok.com/api — returns JSON array of jobs."""
+    seen_ids: set[str] = set()
+    for query in queries:
+        tag = query.lower().replace(" ", "-")
+        url = f"https://remoteok.com/api?tag={tag}"
+        try:
+            resp = httpx.get(url, headers=HEADERS, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+            for item in data:
+                if not isinstance(item, dict) or "id" not in item:
+                    continue
+                jid = str(item.get("id", ""))
+                if jid in seen_ids:
+                    continue
+                seen_ids.add(jid)
+                yield {
+                    "source": "RemoteOK",
+                    "external_id": jid,
+                    "title": item.get("position", ""),
+                    "company": item.get("company", ""),
+                    "location": "Remote",
+                    "salary": item.get("salary", ""),
+                    "url": item.get("url", f"https://remoteok.com/l/{jid}"),
+                    "description": html.unescape(
+                        re.sub(r"<[^>]+>", " ", item.get("description", ""))
+                    ),
+                }
+        except Exception as e:
+            print(f"  [RemoteOK] Error for '{query}': {e}")
+        time.sleep(1)
+
+
+# ---------------------------------------------------------------------------
+# Source 2: Arbeitnow
+# ---------------------------------------------------------------------------
+
+def search_arbeitnow(queries: list[str]) -> Generator[dict, None, None]:
+    """https://www.arbeitnow.com/api/job-board-api"""
+    seen: set[str] = set()
+    for query in queries:
+        page = 1
+        while page <= 3:
+            url = "https://www.arbeitnow.com/api/job-board-api"
+            try:
+                resp = httpx.get(
+                    url,
+                    params={"search": query, "page": page},
+                    headers=HEADERS,
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                data = resp.json().get("data", [])
+                if not data:
+                    break
+                for item in data:
+                    jurl = item.get("url", "")
+                    if jurl in seen:
+                        continue
+                    seen.add(jurl)
+                    title = item.get("title", "")
+                    desc = html.unescape(
+                        re.sub(r"<[^>]+>", " ", item.get("description", ""))
+                    )
+                    # Skip non-tech and non-English jobs
+                    if not _is_tech_job(title, desc):
+                        continue
+                    yield {
+                        "source": "Arbeitnow",
+                        "external_id": item.get("slug", ""),
+                        "title": title,
+                        "company": item.get("company_name", ""),
+                        "location": item.get("location", "Remote"),
+                        "salary": "",
+                        "url": jurl,
+                        "description": desc,
+                    }
+                page += 1
+                time.sleep(0.5)
+            except Exception as e:
+                print(f"  [Arbeitnow] Error for '{query}' page {page}: {e}")
+                break
+
+
+# ---------------------------------------------------------------------------
+# Source 3: The Muse
+# ---------------------------------------------------------------------------
+
+_MUSE_CATEGORY_MAP = {
+    "software engineer": "Software Engineer",
+    "backend": "Software Engineer",
+    "frontend": "Software Engineer",
+    "fullstack": "Software Engineer",
+    "data scientist": "Data Science",
+    "machine learning": "Data Science",
+    "devops": "IT",
+    "product manager": "Project Management",
+    "designer": "Design and UX",
+}
+
+def search_themuse(queries: list[str]) -> Generator[dict, None, None]:
+    seen: set[str] = set()
+    for query in queries:
+        category = None
+        ql = query.lower()
+        for kw, cat in _MUSE_CATEGORY_MAP.items():
+            if kw in ql:
+                category = cat
+                break
+
+        page = 1
+        while page <= 3:
+            params: dict = {"page": page, "descending": "true"}
+            if category:
+                params["category"] = category
+            try:
+                resp = httpx.get(
+                    "https://www.themuse.com/api/public/jobs",
+                    params=params,
+                    headers=HEADERS,
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                results = resp.json().get("results", [])
+                if not results:
+                    break
+                for item in results:
+                    jurl = item.get("refs", {}).get("landing_page", "")
+                    if jurl in seen:
+                        continue
+                    seen.add(jurl)
+                    # Filter by query keyword in title
+                    title = item.get("name", "")
+                    if query.lower() not in title.lower() and not category:
+                        continue
+                    locs = item.get("locations", [])
+                    location = locs[0].get("name", "Remote") if locs else "Remote"
+                    contents = item.get("contents", "")
+                    description = html.unescape(re.sub(r"<[^>]+>", " ", contents))
+                    yield {
+                        "source": "TheMuse",
+                        "external_id": str(item.get("id", "")),
+                        "title": title,
+                        "company": item.get("company", {}).get("name", ""),
+                        "location": location,
+                        "salary": "",
+                        "url": jurl,
+                        "description": description,
+                    }
+                page += 1
+                time.sleep(0.5)
+            except Exception as e:
+                print(f"  [TheMuse] Error for '{query}' page {page}: {e}")
+                break
+
+
+# ---------------------------------------------------------------------------
+# Source 4: Adzuna (requires free API key)
+# ---------------------------------------------------------------------------
+
+def search_adzuna(queries: list[str], country: str = "us") -> Generator[dict, None, None]:
+    app_id = os.environ.get("ADZUNA_APP_ID", "")
+    api_key = os.environ.get("ADZUNA_API_KEY", "")
+    if not app_id or not api_key:
+        return
+
+    seen: set[str] = set()
+    for query in queries:
+        for page in range(1, 4):
+            url = f"https://api.adzuna.com/v1/api/jobs/{country}/search/{page}"
+            try:
+                resp = httpx.get(
+                    url,
+                    params={
+                        "app_id": app_id,
+                        "app_key": api_key,
+                        "what": query,
+                        "results_per_page": 20,
+                        "content-type": "application/json",
+                    },
+                    headers=HEADERS,
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                results = resp.json().get("results", [])
+                if not results:
+                    break
+                for item in results:
+                    jurl = item.get("redirect_url", "")
+                    if jurl in seen:
+                        continue
+                    seen.add(jurl)
+                    salary = ""
+                    if item.get("salary_min") and item.get("salary_max"):
+                        salary = f"${int(item['salary_min']):,} – ${int(item['salary_max']):,}"
+                    yield {
+                        "source": "Adzuna",
+                        "external_id": item.get("id", ""),
+                        "title": item.get("title", ""),
+                        "company": item.get("company", {}).get("display_name", ""),
+                        "location": item.get("location", {}).get("display_name", ""),
+                        "salary": salary,
+                        "url": jurl,
+                        "description": item.get("description", ""),
+                    }
+                time.sleep(0.5)
+            except Exception as e:
+                print(f"  [Adzuna] Error for '{query}' page {page}: {e}")
+                break
+
+
+# ---------------------------------------------------------------------------
+# Source 5: Hacker News "Who's Hiring"
+# ---------------------------------------------------------------------------
+
+def search_hn_hiring(queries: list[str]) -> Generator[dict, None, None]:
+    """Parses the latest monthly HN 'Ask HN: Who is hiring?' thread."""
+    try:
+        # Find latest "Who is hiring" post
+        search_resp = httpx.get(
+            "https://hn.algolia.com/api/v1/search",
+            params={
+                "query": "Ask HN: Who is hiring?",
+                "tags": "story",
+                "numericFilters": "points>100",
+            },
+            timeout=15,
+        )
+        search_resp.raise_for_status()
+        hits = search_resp.json().get("hits", [])
+        if not hits:
+            return
+        story_id = hits[0]["objectID"]
+
+        # Get all top-level comments
+        kids_resp = httpx.get(
+            f"https://hacker-news.firebaseio.com/v0/item/{story_id}.json",
+            timeout=15,
+        )
+        kids_resp.raise_for_status()
+        kids = kids_resp.json().get("kids", [])[:100]
+
+        for kid_id in kids:
+            try:
+                comment_resp = httpx.get(
+                    f"https://hacker-news.firebaseio.com/v0/item/{kid_id}.json",
+                    timeout=10,
+                )
+                comment = comment_resp.json()
+                text = comment.get("text", "")
+                if not text:
+                    continue
+                plain = html.unescape(re.sub(r"<[^>]+>", " ", text))
+
+                # Only yield if any query keyword matches
+                matched = any(q.lower() in plain.lower() for q in queries)
+                if not matched:
+                    continue
+
+                # Try to extract company name (first line usually is "Company | Location | ...")
+                first_line = plain.split("\n")[0][:100]
+                yield {
+                    "source": "HN Hiring",
+                    "external_id": str(kid_id),
+                    "title": first_line,
+                    "company": first_line.split("|")[0].strip() if "|" in first_line else "",
+                    "location": "See description",
+                    "salary": "",
+                    "url": f"https://news.ycombinator.com/item?id={kid_id}",
+                    "description": plain[:3000],
+                }
+                time.sleep(0.1)
+            except Exception:
+                continue
+    except Exception as e:
+        print(f"  [HN Hiring] Error: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Source 6: Remotive (remote tech jobs, free API)
+# ---------------------------------------------------------------------------
+
+def search_remotive(queries: list[str]) -> Generator[dict, None, None]:
+    """https://remotive.com/api/remote-jobs — free, no auth required."""
+    seen: set[str] = set()
+    for query in queries:
+        try:
+            resp = httpx.get(
+                "https://remotive.com/api/remote-jobs",
+                params={"search": query, "limit": 50},
+                headers=HEADERS,
+                timeout=15,
+            )
+            resp.raise_for_status()
+            jobs_data = resp.json().get("jobs", [])
+            for item in jobs_data:
+                jurl = item.get("url", "")
+                if jurl in seen:
+                    continue
+                seen.add(jurl)
+                title = item.get("title", "")
+                desc = html.unescape(re.sub(r"<[^>]+>", " ", item.get("description", "")))
+                yield {
+                    "source": "Remotive",
+                    "external_id": str(item.get("id", "")),
+                    "title": title,
+                    "company": item.get("company_name", ""),
+                    "location": item.get("candidate_required_location", "Remote"),
+                    "salary": item.get("salary", ""),
+                    "url": jurl,
+                    "description": desc,
+                }
+        except Exception as e:
+            print(f"  [Remotive] Error for '{query}': {e}")
+        time.sleep(1)
+
+
+# ---------------------------------------------------------------------------
+# Source 7: Jobicy (remote tech jobs, free API)
+# ---------------------------------------------------------------------------
+
+def search_jobicy(queries: list[str]) -> Generator[dict, None, None]:
+    """https://jobicy.com/api/v2/remote-jobs — free, no auth required."""
+    seen: set[str] = set()
+    for query in queries:
+        try:
+            resp = httpx.get(
+                "https://jobicy.com/api/v2/remote-jobs",
+                params={"tag": query, "count": 50},
+                headers=HEADERS,
+                timeout=15,
+            )
+            resp.raise_for_status()
+            jobs_data = resp.json().get("jobs", [])
+            for item in jobs_data:
+                jurl = item.get("url", "")
+                if jurl in seen:
+                    continue
+                seen.add(jurl)
+                title = item.get("jobTitle", "")
+                desc = html.unescape(re.sub(r"<[^>]+>", " ", item.get("jobDescription", "")))
+                yield {
+                    "source": "Jobicy",
+                    "external_id": str(item.get("id", "")),
+                    "title": title,
+                    "company": item.get("companyName", ""),
+                    "location": item.get("jobGeo", "Remote"),
+                    "salary": item.get("annualSalaryMin", ""),
+                    "url": jurl,
+                    "description": desc,
+                }
+        except Exception as e:
+            print(f"  [Jobicy] Error for '{query}': {e}")
+        time.sleep(1)
+
+
+# ---------------------------------------------------------------------------
+# Main search function
+# ---------------------------------------------------------------------------
+
+def search_all_sources(
+    queries: list[str],
+    sources: list[str] | None = None,
+    remote_only: bool = False,
+) -> list[dict]:
+    """
+    Search all enabled sources and return de-duplicated job listings.
+
+    Args:
+        queries: list of job title / keyword queries
+        sources: list of source names to use (default: all)
+        remote_only: filter to remote-only jobs
+
+    Returns:
+        list of job dicts ready to insert into DB
+    """
+    all_sources = ["remoteok", "arbeitnow", "themuse", "adzuna", "hn", "remotive", "jobicy"]
+    enabled = set(s.lower() for s in (sources or all_sources))
+
+    jobs: list[dict] = []
+    seen_urls: set[str] = set()
+
+    def add(gen):
+        for job in gen:
+            url = job.get("url", "")
+            if url and url not in seen_urls:
+                seen_urls.add(url)
+                jobs.append(job)
+
+    if "remoteok" in enabled:
+        print("  Searching RemoteOK...")
+        add(search_remoteok(queries))
+
+    if "arbeitnow" in enabled:
+        print("  Searching Arbeitnow...")
+        add(search_arbeitnow(queries))
+
+    if "themuse" in enabled:
+        print("  Searching The Muse...")
+        add(search_themuse(queries))
+
+    if "adzuna" in enabled:
+        if os.environ.get("ADZUNA_APP_ID"):
+            print("  Searching Adzuna...")
+            add(search_adzuna(queries))
+        else:
+            print("  Skipping Adzuna (no API key in .env)")
+
+    if "hn" in enabled:
+        print("  Searching HN Who's Hiring...")
+        add(search_hn_hiring(queries))
+
+    if "remotive" in enabled:
+        print("  Searching Remotive...")
+        add(search_remotive(queries))
+
+    if "jobicy" in enabled:
+        print("  Searching Jobicy...")
+        add(search_jobicy(queries))
+
+    if remote_only:
+        keywords = {"remote", "anywhere", "worldwide", "distributed", "wfh"}
+        jobs = [
+            j for j in jobs
+            if j["source"] == "RemoteOK"
+            or any(kw in j.get("location", "").lower() for kw in keywords)
+            or any(kw in j.get("description", "").lower()[:200] for kw in keywords)
+        ]
+
+    return jobs
