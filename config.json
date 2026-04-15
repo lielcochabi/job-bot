@@ -4,7 +4,12 @@
     "Python Developer",
     "Software Engineer",
     "FastAPI Developer",
-    "Backend Engineer"
+    "Backend Engineer",
+    "Game Developer",
+    "Unity Developer",
+    "Unreal Engine Developer",
+    "Software Developer Intern",
+    "Junior Software Engineer"
   ],
   "remote_only": false,
   "match_threshold": 70,
