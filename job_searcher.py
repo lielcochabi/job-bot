@@ -417,6 +417,164 @@ def search_jobicy(queries: list[str]) -> Generator[dict, None, None]:
 
 
 # ---------------------------------------------------------------------------
+# Source 8: We Work Remotely (RSS feed, free, no auth)
+# ---------------------------------------------------------------------------
+
+def search_weworkremotely(queries: list[str]) -> Generator[dict, None, None]:
+    """https://weworkremotely.com — parses RSS feeds for programming/devops categories."""
+    import xml.etree.ElementTree as ET
+
+    feeds = [
+        "https://weworkremotely.com/categories/remote-programming-jobs.rss",
+        "https://weworkremotely.com/categories/remote-devops-sysadmin-jobs.rss",
+        "https://weworkremotely.com/categories/remote-full-stack-programming-jobs.rss",
+        "https://weworkremotely.com/categories/remote-back-end-programming-jobs.rss",
+    ]
+    seen: set[str] = set()
+
+    for feed_url in feeds:
+        try:
+            resp = httpx.get(feed_url, headers=HEADERS, timeout=15)
+            resp.raise_for_status()
+            root = ET.fromstring(resp.content)
+            for item in root.findall(".//item"):
+                title_el = item.find("title")
+                link_el  = item.find("link")
+                desc_el  = item.find("description")
+                region_el = item.find("{https://weworkremotely.com}region")
+
+                title = title_el.text if title_el is not None else ""
+                # WWR titles are "Company: Role" format
+                if ":" in title:
+                    company, role = title.split(":", 1)
+                    company = company.strip()
+                    title = role.strip()
+                else:
+                    company = ""
+
+                jurl = link_el.text if link_el is not None else ""
+                if not jurl or jurl in seen:
+                    continue
+                seen.add(jurl)
+
+                desc = ""
+                if desc_el is not None and desc_el.text:
+                    desc = html.unescape(re.sub(r"<[^>]+>", " ", desc_el.text))
+
+                location = region_el.text if region_el is not None else "Remote"
+
+                if not _is_tech_job(title, desc):
+                    continue
+
+                yield {
+                    "source": "WeWorkRemotely",
+                    "external_id": jurl,
+                    "title": title,
+                    "company": company,
+                    "location": location or "Remote",
+                    "salary": "",
+                    "url": jurl,
+                    "description": desc,
+                }
+        except Exception as e:
+            print(f"  [WeWorkRemotely] Error: {e}")
+        time.sleep(1)
+
+
+# ---------------------------------------------------------------------------
+# Source 9: Working Nomads (JSON API, free, no auth)
+# ---------------------------------------------------------------------------
+
+def search_workingnomads(queries: list[str]) -> Generator[dict, None, None]:
+    """https://www.workingnomads.com/api/exposed_jobs/ — free JSON API."""
+    seen: set[str] = set()
+    categories = ["back-end", "dev-ops", "software-development", "game-development"]
+
+    for category in categories:
+        try:
+            resp = httpx.get(
+                f"https://www.workingnomads.com/api/exposed_jobs/?category={category}",
+                headers=HEADERS,
+                timeout=15,
+            )
+            resp.raise_for_status()
+            jobs_data = resp.json()
+            for item in jobs_data:
+                jurl = item.get("url", "")
+                if not jurl or jurl in seen:
+                    continue
+                seen.add(jurl)
+                title = item.get("title", "")
+                desc = html.unescape(re.sub(r"<[^>]+>", " ", item.get("description", "")))
+
+                if not _is_tech_job(title, desc):
+                    continue
+
+                yield {
+                    "source": "WorkingNomads",
+                    "external_id": str(item.get("id", "")),
+                    "title": title,
+                    "company": item.get("company", ""),
+                    "location": item.get("region", "Remote"),
+                    "salary": item.get("salary", ""),
+                    "url": jurl,
+                    "description": desc,
+                }
+        except Exception as e:
+            print(f"  [WorkingNomads] Error for '{category}': {e}")
+        time.sleep(1)
+
+
+# ---------------------------------------------------------------------------
+# Source 10: Himalayas (free API, no auth, remote tech jobs)
+# ---------------------------------------------------------------------------
+
+def search_himalayas(queries: list[str]) -> Generator[dict, None, None]:
+    """https://himalayas.app/jobs/api — free, no auth, remote jobs only."""
+    seen: set[str] = set()
+    for query in queries:
+        try:
+            resp = httpx.get(
+                "https://himalayas.app/jobs/api",
+                params={"q": query, "limit": 50},
+                headers=HEADERS,
+                timeout=15,
+            )
+            resp.raise_for_status()
+            jobs_data = resp.json().get("jobs", [])
+            for item in jobs_data:
+                jurl = item.get("applicationLink") or item.get("shortUrl", "")
+                if not jurl or jurl in seen:
+                    continue
+                seen.add(jurl)
+                title = item.get("title", "")
+                desc = html.unescape(re.sub(r"<[^>]+>", " ", item.get("description", "")))
+
+                if not _is_tech_job(title, desc):
+                    continue
+
+                salary = ""
+                sal_min = item.get("salaryMin")
+                sal_max = item.get("salaryMax")
+                if sal_min and sal_max:
+                    salary = f"${sal_min:,} – ${sal_max:,}"
+
+                yield {
+                    "source": "Himalayas",
+                    "external_id": str(item.get("id", "")),
+                    "title": title,
+                    "company": item.get("companyName", ""),
+                    "location": "Remote",
+                    "salary": salary,
+                    "url": jurl,
+                    "description": desc,
+                }
+        except Exception as e:
+            print(f"  [Himalayas] Error for '{query}': {e}")
+        time.sleep(1)
+
+
+# ---------------------------------------------------------------------------
 # Main search function
 # ---------------------------------------------------------------------------
 
@@ -436,7 +594,8 @@ def search_all_sources(
     Returns:
         list of job dicts ready to insert into DB
     """
-    all_sources = ["remoteok", "arbeitnow", "themuse", "adzuna", "hn", "remotive", "jobicy"]
+    all_sources = ["remoteok", "arbeitnow", "themuse", "adzuna", "hn", "remotive", "jobicy",
+                   "weworkremotely", "workingnomads", "himalayas"]
     enabled = set(s.lower() for s in (sources or all_sources))
 
     jobs: list[dict] = []
@@ -479,6 +638,18 @@ def search_all_sources(
     if "jobicy" in enabled:
         print("  Searching Jobicy...")
         add(search_jobicy(queries))
+
+    if "weworkremotely" in enabled:
+        print("  Searching We Work Remotely...")
+        add(search_weworkremotely(queries))
+
+    if "workingnomads" in enabled:
+        print("  Searching Working Nomads...")
+        add(search_workingnomads(queries))
+
+    if "himalayas" in enabled:
+        print("  Searching Himalayas...")
+        add(search_himalayas(queries))
 
     if remote_only:
         keywords = {"remote", "anywhere", "worldwide", "distributed", "wfh"}

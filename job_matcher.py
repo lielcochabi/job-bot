@@ -143,6 +143,56 @@ _NON_TECH_TITLES = {
 }
 
 # ---------------------------------------------------------------------------
+# Experience level detection
+# ---------------------------------------------------------------------------
+
+# Patterns that mean "requires 3+ years" → hard disqualify
+_HIGH_EXP_PATTERNS = [
+    r"\b([3-9]|\d{2})\+?\s*years?\s*(of\s+)?(professional\s+)?experience",
+    r"\bminimum\s+[3-9]\s*years?",
+    r"\bat\s+least\s+[3-9]\s*years?",
+    r"\b[3-9]\s*[-–]\s*\d+\s*years?\s*(of\s+)?experience",
+    r"\bexperience[:\s]+[3-9]\+?\s*years?",
+]
+
+# Patterns that confirm entry/junior level → boost
+_LOW_EXP_PATTERNS = [
+    r"\b0[-–]2\s*years?",
+    r"\b1[-–]2\s*years?",
+    r"\bentry[\s\-]level",
+    r"\bno\s+experience\s+required",
+    r"\bfresh\s+grad",
+    r"\bnew\s+grad",
+    r"\bjunior\s+developer",
+    r"\bjunior\s+engineer",
+    r"\bstudent\s+position",
+    r"\bwerkstudent",
+    r"\bworking\s+student",
+    r"\binternship",
+]
+
+
+def _experience_pts(title: str, desc: str) -> tuple[int, str]:
+    """
+    Returns (points, reason).
+    Hard blocks (return -999) if description requires 3+ years experience.
+    """
+    combined = (title + " " + desc[:1500]).lower()
+
+    # Check for high experience requirements → disqualify entirely
+    for pattern in _HIGH_EXP_PATTERNS:
+        if re.search(pattern, combined):
+            return -999, f"Requires 3+ years experience"
+
+    # Check for explicit entry/junior signals → bonus
+    for pattern in _LOW_EXP_PATTERNS:
+        if re.search(pattern, combined):
+            return 10, "Entry/junior level confirmed"
+
+    return 0, ""
+
+
+# ---------------------------------------------------------------------------
 # Location helpers
 # ---------------------------------------------------------------------------
 
@@ -309,26 +359,34 @@ def match_job(
             "matched": [], "missing": [],
         })
 
-    # 2. Skill match (0–55 pts)
+    # 2. Experience check — hard block if 3+ years required
+    exp_pts, exp_reason = _experience_pts(title, desc)
+    if exp_pts == -999:
+        return 0.0, json.dumps({
+            "reason": exp_reason,
+            "matched": [], "missing": [],
+        })
+
+    # 3. Skill match (0–55 pts)
     skill_score, matched = _skill_pts(job, weights)
 
-    # 3. Seniority (–30 to +15 pts)
+    # 4. Seniority (–30 to +15 pts)
     level = _seniority(title)
     level_pts = {"senior": -30, "junior": 15, "mid": 5}[level]
 
-    # 4. Location (0 to –25 pts)
+    # 5. Location (0 to –25 pts)
     loc_pts = _location_pts(job)
 
-    # 5. Language (0 to –25 pts)
+    # 6. Language (0 to –25 pts)
     lang_pts = _language_pts(desc)
 
-    # 6. Role relevance bonus (0–15 pts)
+    # 7. Role relevance bonus (0–15 pts)
     bonus = _relevance_bonus(title, desc)
 
-    # 7. Base: every tech role starts at 20
+    # 8. Base: every tech role starts at 20
     base = 20
 
-    total = base + skill_score + level_pts + loc_pts + lang_pts + bonus
+    total = base + skill_score + level_pts + loc_pts + lang_pts + bonus + exp_pts
     total = round(max(0.0, min(100.0, float(total))), 1)
 
     reason = json.dumps({
@@ -339,12 +397,14 @@ def match_job(
             "location": loc_pts,
             "language": lang_pts,
             "relevance_bonus": bonus,
+            "experience": exp_pts,
         },
         "matched": matched[:10],
         "reason": (
             f"Seniority: {level}. "
             f"Skills matched: {', '.join(matched[:6]) or 'none'}. "
-            f"Location pts: {loc_pts}."
+            f"Location pts: {loc_pts}. "
+            + (exp_reason if exp_reason else "")
         ),
     }, ensure_ascii=False)
 
