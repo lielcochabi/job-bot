@@ -625,7 +625,7 @@ def search_all_sources(
     and retried once after all other sources finish (with a 30s wait).
     """
     all_sources = ["remoteok", "arbeitnow", "themuse", "adzuna", "hn", "remotive", "jobicy",
-                   "weworkremotely", "workingnomads", "himalayas"]
+                   "workingnomads", "himalayas"]
     enabled = set(s.lower() for s in (sources or all_sources))
 
     jobs: list[dict] = []
@@ -647,7 +647,6 @@ def search_all_sources(
         "hn":             ("HN Who's Hiring",    lambda: search_hn_hiring(queries),      True),
         "remotive":       ("Remotive",           lambda: search_remotive(queries),       True),
         "jobicy":         ("Jobicy",             lambda: search_jobicy(queries),         True),
-        "weworkremotely": ("We Work Remotely",   lambda: search_weworkremotely(queries), True),
         "workingnomads":  ("Working Nomads",     lambda: search_workingnomads(queries),  True),
         "himalayas":      ("Himalayas",          lambda: search_himalayas(queries),      True),
     }
