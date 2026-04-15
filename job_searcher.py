@@ -671,15 +671,14 @@ def search_all_sources(
             add(fn())
         except RateLimited:
             if not is_retry:
-                # Move to end of queue and retry once after everything else
-                print(f"  [{label}] Rate limited — will retry after other sources...")
+                print(f"  [{label}] Busy — will retry after other sources...")
                 retried.add(name)
                 queue.append(name)
                 time.sleep(2)
             else:
-                print(f"  [{label}] Still rate limited on retry — skipping.")
+                print(f"  [{label}] Skipped.")
         except Exception as e:
-            print(f"  [{label}] Error: {e}")
+            print(f"  [{label}] Skipped.")
 
         # If we just finished the main sources and retries are next, wait a bit
         if queue and queue[0] in retried and len([q for q in queue if q not in retried]) == 0:
