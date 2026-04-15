@@ -5,6 +5,8 @@ Run with: streamlit run app.py
 import json
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 import streamlit as st
@@ -33,160 +35,230 @@ CONFIG_PATH = BOT_DIR / "config.json"
 
 st.markdown("""
 <style>
-    /* ── General ── */
     html, body, [class*="css"] { font-family: 'Inter', 'Segoe UI', sans-serif; }
-
-    /* Remove default Streamlit top padding */
     .block-container { padding-top: 1.5rem !important; padding-bottom: 2rem !important; }
 
-    /* ── Sidebar ── */
-    [data-testid="stSidebar"] {
-        background: #0f172a;
-        padding: 1.5rem 1rem;
-    }
+    [data-testid="stSidebar"] { background: #0f172a; padding: 1.5rem 1rem; }
     [data-testid="stSidebar"] * { color: #e2e8f0 !important; }
-    [data-testid="stSidebar"] .stRadio label {
-        font-size: 1rem;
-        padding: 0.4rem 0;
-    }
     [data-testid="stSidebar"] hr { border-color: #334155; }
 
-    /* ── Stat card ── */
     .stat-card {
         background: linear-gradient(135deg, #1e293b, #0f172a);
-        border: 1px solid #334155;
-        border-radius: 14px;
-        padding: 22px 16px;
-        text-align: center;
-        width: 100%;
-        box-sizing: border-box;
+        border: 1px solid #334155; border-radius: 14px;
+        padding: 22px 16px; text-align: center;
+        width: 100%; box-sizing: border-box;
     }
-    .stat-card .value {
-        font-size: 2.2rem;
-        font-weight: 800;
-        line-height: 1.1;
-    }
+    .stat-card .value { font-size: 2.2rem; font-weight: 800; line-height: 1.1; }
     .stat-card .label {
-        font-size: 0.78rem;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-        margin-top: 6px;
-        opacity: 0.7;
-        color: #94a3b8;
+        font-size: 0.78rem; letter-spacing: 0.05em; text-transform: uppercase;
+        margin-top: 6px; opacity: 0.7; color: #94a3b8;
     }
 
-    /* ── Job card ── */
     .job-card {
-        background: #1e293b;
-        border: 1px solid #334155;
-        border-radius: 14px;
-        padding: 20px 24px;
-        margin-bottom: 14px;
-        width: 100%;
-        box-sizing: border-box;
+        background: #1e293b; border: 1px solid #334155;
+        border-radius: 14px; padding: 20px 24px;
+        margin-bottom: 14px; width: 100%; box-sizing: border-box;
     }
     .job-card:hover { border-color: #6366f1; }
     .job-card .job-title {
-        font-size: 1.05rem;
-        font-weight: 700;
-        color: #e2e8f0;
-        margin-bottom: 4px;
-        white-space: normal;
-        word-break: break-word;
+        font-size: 1.05rem; font-weight: 700; color: #e2e8f0;
+        margin-bottom: 4px; white-space: normal; word-break: break-word;
     }
-    .job-card .job-meta {
-        font-size: 0.82rem;
-        color: #94a3b8;
-        margin-bottom: 10px;
-    }
+    .job-card .job-meta { font-size: 0.82rem; color: #94a3b8; margin-bottom: 10px; }
     .job-card .score-badge {
-        display: inline-block;
-        padding: 3px 12px;
-        border-radius: 99px;
-        font-size: 0.8rem;
-        font-weight: 700;
-        margin-right: 8px;
+        display: inline-block; padding: 3px 12px;
+        border-radius: 99px; font-size: 0.8rem; font-weight: 700; margin-right: 8px;
     }
-    .job-card .skill-tag {
-        display: inline-block;
-        background: #1e3a5f;
-        color: #93c5fd;
-        border-radius: 6px;
-        padding: 2px 9px;
-        font-size: 0.75rem;
-        margin: 2px 2px 0 0;
+    .skill-tag {
+        display: inline-block; background: #1e3a5f; color: #93c5fd;
+        border-radius: 6px; padding: 2px 9px; font-size: 0.75rem; margin: 2px 2px 0 0;
     }
     .job-card .desc {
-        font-size: 0.82rem;
-        color: #94a3b8;
-        margin-top: 10px;
-        line-height: 1.55;
-        white-space: normal;
-        word-break: break-word;
+        font-size: 0.82rem; color: #94a3b8; margin-top: 10px;
+        line-height: 1.55; white-space: normal; word-break: break-word;
     }
 
-    /* ── Buttons ── */
     .stButton > button {
-        border-radius: 10px !important;
-        font-weight: 600 !important;
-        padding: 0.5rem 1.2rem !important;
-        transition: all 0.2s !important;
+        border-radius: 10px !important; font-weight: 600 !important;
+        padding: 0.5rem 1.2rem !important; transition: all 0.2s !important;
     }
     .stButton > button:hover { transform: translateY(-1px); }
 
-    /* ── Action bar ── */
-    .action-bar {
-        display: flex;
-        gap: 12px;
-        flex-wrap: wrap;
-        margin-bottom: 1.5rem;
+    .page-title { font-size: 1.8rem; font-weight: 800; color: #e2e8f0; margin-bottom: 0.2rem; }
+    .page-sub { font-size: 0.9rem; color: #64748b; margin-bottom: 1.5rem; }
+    .section-divider { border: none; border-top: 1px solid #334155; margin: 1.5rem 0; }
+
+    /* ── Task Panel ── */
+    .task-panel {
+        background: #0f172a; border: 1px solid #334155;
+        border-radius: 12px; overflow: hidden; margin-top: 1rem;
+    }
+    .task-panel-header {
+        display: flex; align-items: center; gap: 10px;
+        padding: 12px 18px; border-bottom: 1px solid #1e293b;
+    }
+    .task-panel-header.running { border-left: 3px solid #f59e0b; }
+    .task-panel-header.done    { border-left: 3px solid #34d399; }
+    .task-panel-header.error   { border-left: 3px solid #f87171; }
+    .task-panel-body {
+        padding: 14px 18px; font-family: 'Courier New', monospace;
+        font-size: 0.8rem; max-height: 380px; overflow-y: auto;
+        line-height: 1.6;
     }
 
-    /* ── Page title ── */
-    .page-title {
-        font-size: 1.8rem;
-        font-weight: 800;
-        color: #e2e8f0;
-        margin-bottom: 0.2rem;
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to   { transform: rotate(360deg); }
     }
-    .page-sub {
-        font-size: 0.9rem;
-        color: #64748b;
-        margin-bottom: 1.5rem;
+    .spinner-icon {
+        display: inline-block;
+        animation: spin 1s linear infinite;
+        font-style: normal;
     }
-
-    /* ── Log box ── */
-    .log-box {
-        background: #0f172a;
-        border: 1px solid #334155;
-        border-radius: 10px;
-        padding: 14px 16px;
-        font-family: 'Courier New', monospace;
-        font-size: 0.8rem;
-        color: #86efac;
-        max-height: 380px;
-        overflow-y: auto;
-        white-space: pre-wrap;
-        word-break: break-word;
+    @keyframes blink {
+        0%, 100% { opacity: 1; }
+        50%       { opacity: 0.2; }
+    }
+    .dot-pulse {
+        display: inline-block; width: 8px; height: 8px;
+        background: #f59e0b; border-radius: 50%;
+        animation: blink 1.1s infinite; margin-right: 4px;
     }
 
-    /* ── Divider ── */
-    .section-divider {
-        border: none;
-        border-top: 1px solid #334155;
-        margin: 1.5rem 0;
-    }
-
-    /* ── Hide default Streamlit elements ── */
     #MainMenu { visibility: hidden; }
-    footer { visibility: hidden; }
-    header { visibility: hidden; }
+    footer    { visibility: hidden; }
+    header    { visibility: hidden; }
 </style>
 """, unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Background task helpers
+# ---------------------------------------------------------------------------
+
+def launch_task(cmd: list, task_key: str):
+    """Start a subprocess in a background thread; track output in session_state."""
+    st.session_state[task_key] = {
+        "running": True,
+        "lines": [],
+        "returncode": None,
+        "visible": True,
+    }
+
+    def _run():
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=str(BOT_DIR),
+            )
+            for raw in proc.stdout:
+                line = raw.rstrip()
+                if line:
+                    st.session_state[task_key]["lines"].append(line)
+            proc.wait()
+            st.session_state[task_key]["running"] = False
+            st.session_state[task_key]["returncode"] = proc.returncode
+        except Exception as exc:
+            st.session_state[task_key]["lines"].append(f"Launch error: {exc}")
+            st.session_state[task_key]["running"] = False
+            st.session_state[task_key]["returncode"] = 1
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+def _colorize(line: str) -> str:
+    """Wrap a log line in a color span based on its content."""
+    esc = line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    lo = line.lower()
+    if any(k in lo for k in ("[match]", "✓", "complete", "success", "done", "applied")):
+        return f'<span style="color:#34d399">{esc}</span>'
+    if any(k in lo for k in ("error", "fail", "❌", "exception", "traceback")):
+        return f'<span style="color:#f87171">{esc}</span>'
+    if any(k in lo for k in ("skip", "busy", "retry", "rate")):
+        return f'<span style="color:#64748b">{esc}</span>'
+    if any(k in lo for k in ("searching", "source", "fetching", "🔍")):
+        return f'<span style="color:#60a5fa">{esc}</span>'
+    if any(k in lo for k in ("match", "score", "🎯", "found")):
+        return f'<span style="color:#c084fc">{esc}</span>'
+    if any(k in lo for k in ("warn", "⚠", "skip")):
+        return f'<span style="color:#fbbf24">{esc}</span>'
+    return f'<span style="color:#94a3b8">{esc}</span>'
+
+
+def render_task_panel(task_key: str, title: str) -> bool:
+    """
+    Render the output panel for a running/completed task.
+    Returns True if the task is still running (caller should rerun).
+    """
+    state = st.session_state.get(task_key)
+    if not state or not state.get("visible", True):
+        return False
+
+    running  = state["running"]
+    lines    = state["lines"]
+    rc       = state["returncode"]
+
+    # ── Header row ──────────────────────────────────────────────────────────
+    header_col, close_col = st.columns([11, 1])
+    with header_col:
+        if running:
+            st.markdown(
+                f'<div class="task-panel-header running">'
+                f'<i class="spinner-icon">⏳</i>'
+                f'<span style="color:#f59e0b;font-weight:700">{title}</span>'
+                f'<span style="color:#64748b;font-size:0.8rem"> &nbsp;— running, please wait…</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        elif rc == 0:
+            st.markdown(
+                f'<div class="task-panel-header done">'
+                f'<span style="color:#34d399;font-weight:700">✅ {title} — Completed!</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                f'<div class="task-panel-header error">'
+                f'<span style="color:#f87171;font-weight:700">❌ {title} — Failed (exit {rc})</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+    with close_col:
+        if st.button("✕ Close", key=f"close_{task_key}", use_container_width=True):
+            st.session_state[task_key]["visible"] = False
+            st.rerun()
+
+    # ── Output box ──────────────────────────────────────────────────────────
+    if not lines:
+        placeholder = '<span style="color:#475569;font-style:italic">Starting process…</span>'
+        st.markdown(
+            f'<div class="task-panel-body">{placeholder}</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        colored = "<br>".join(_colorize(l) for l in lines[-100:])
+        st.markdown(
+            f'<div class="task-panel-body">{colored}</div>',
+            unsafe_allow_html=True,
+        )
+
+    # ── Auto-refresh while running ──────────────────────────────────────────
+    if running:
+        time.sleep(0.8)
+        st.rerun()
+
+    return running
+
+
+# ---------------------------------------------------------------------------
+# Generic helpers
 # ---------------------------------------------------------------------------
 
 def load_config() -> dict:
@@ -199,44 +271,18 @@ def save_config(cfg: dict):
     CONFIG_PATH.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
-def run_command(cmd: list[str]):
-    output_box = st.empty()
-    lines: list[str] = []
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        cwd=str(BOT_DIR),
-    )
-    for line in proc.stdout:
-        clean = line.rstrip()
-        if clean:
-            lines.append(clean)
-        html_log = "\n".join(lines[-80:]).replace("<", "&lt;").replace(">", "&gt;")
-        output_box.markdown(f'<div class="log-box">{html_log}</div>', unsafe_allow_html=True)
-    proc.wait()
-    return proc.returncode
-
-
 def score_color(score: float) -> str:
-    if score >= 85:
-        return "#22c55e"
-    if score >= 75:
-        return "#f59e0b"
+    if score >= 85: return "#22c55e"
+    if score >= 75: return "#f59e0b"
     return "#6366f1"
 
 
 def stat_card(col, label: str, value, color: str, icon: str = ""):
     col.markdown(
-        f"""
-        <div class="stat-card">
-            <div class="value" style="color:{color}">{icon} {value}</div>
-            <div class="label">{label}</div>
-        </div>
-        """,
+        f'<div class="stat-card">'
+        f'<div class="value" style="color:{color}">{icon} {value}</div>'
+        f'<div class="label">{label}</div>'
+        f'</div>',
         unsafe_allow_html=True,
     )
 
@@ -272,60 +318,47 @@ if "Dashboard" in page:
     st.markdown('<div class="page-sub">Your automated job application pipeline at a glance.</div>', unsafe_allow_html=True)
 
     c1, c2, c3, c4, c5 = st.columns(5)
-    stat_card(c1, "Total Found",  stats["total"],           "#60a5fa", "")
-    stat_card(c2, "Matched ≥70%", stats["matched"],         "#34d399", "")
-    stat_card(c3, "Applied",      stats["applied"],         "#a78bfa", "")
-    stat_card(c4, "Skipped",      stats["skipped"],         "#94a3b8", "")
-    stat_card(c5, "Avg Score",    f"{stats['avg_score']}%", "#fb923c", "")
+    stat_card(c1, "Total Found",  stats["total"],           "#60a5fa")
+    stat_card(c2, "Matched ≥70%", stats["matched"],         "#34d399")
+    stat_card(c3, "Applied",      stats["applied"],         "#a78bfa")
+    stat_card(c4, "Skipped",      stats["skipped"],         "#94a3b8")
+    stat_card(c5, "Avg Score",    f"{stats['avg_score']}%", "#fb923c")
 
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
     st.markdown("### ⚡ Quick Actions")
 
     col1, col2, col3, col4 = st.columns(4)
-    search_clicked  = col1.button("🔍 Search Jobs",       use_container_width=True)
-    match_clicked   = col2.button("🎯 Match Jobs",        use_container_width=True)
-    pipeline_clicked= col3.button("🚀 Full Pipeline",     use_container_width=True, type="primary")
-    status_clicked  = col4.button("🔄 Refresh Stats",     use_container_width=True)
 
-    if search_clicked:
-        st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
-        st.markdown("### 🔍 Search Output")
-        rc = run_command([PYTHON, "main.py", "search"])
-        if rc == 0: st.success("Search complete!")
+    if col1.button("🔍 Search Jobs",   use_container_width=True):
+        launch_task([PYTHON, "main.py", "search"], "task_search")
+    if col2.button("🎯 Match Jobs",    use_container_width=True):
+        launch_task([PYTHON, "main.py", "match"],  "task_match")
+    if col3.button("🚀 Full Pipeline", use_container_width=True, type="primary"):
+        launch_task([PYTHON, "main.py", "run"],    "task_run")
+    if col4.button("🔄 Refresh Stats", use_container_width=True):
         st.rerun()
 
-    if match_clicked:
-        st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
-        st.markdown("### 🎯 Match Output")
-        rc = run_command([PYTHON, "main.py", "match"])
-        if rc == 0: st.success("Matching complete!")
-        st.rerun()
+    # Show whichever task panel is active
+    for key, label in [("task_run", "Full Pipeline"), ("task_search", "Search Jobs"), ("task_match", "Match Jobs")]:
+        render_task_panel(key, label)
 
-    if pipeline_clicked:
-        st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
-        st.markdown("### 🚀 Full Pipeline Output")
-        rc = run_command([PYTHON, "main.py", "run"])
-        if rc == 0: st.success("Pipeline complete!")
-        st.rerun()
-
-    if status_clicked:
-        st.rerun()
-
-    # Recent matched jobs preview
+    # Recent matches preview
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
     st.markdown("### 🎯 Recent Matches")
 
     matched = database.get_jobs_by_status("matched")[:5]
     if matched:
         for job in matched:
-            score  = job.get("match_score") or 0
-            title  = (job.get("title")   or "Unknown")[:60]
-            company= (job.get("company") or "Unknown")[:30]
-            source = job.get("source") or ""
-            url    = job.get("url") or ""
+            score   = job.get("match_score") or 0
+            title   = (job.get("title")   or "Unknown")[:60]
+            company = (job.get("company") or "Unknown")[:30]
+            url     = job.get("url") or ""
             col1, col2, col3 = st.columns([5, 1, 1])
             col1.markdown(f"**{title}** &nbsp;·&nbsp; *{company}*", unsafe_allow_html=True)
-            col2.markdown(f"<span style='color:{score_color(score)};font-weight:700'>{score:.0f}%</span>", unsafe_allow_html=True)
+            col2.markdown(
+                f'<span style="color:{score_color(score)};font-weight:700">{score:.0f}%</span>',
+                unsafe_allow_html=True,
+            )
             if url:
                 col3.link_button("Open →", url, use_container_width=True)
     else:
@@ -338,7 +371,7 @@ if "Dashboard" in page:
 
 elif "Search" in page:
     st.markdown('<div class="page-title">🔍 Search Jobs</div>', unsafe_allow_html=True)
-    st.markdown('<div class="page-sub">Search all 10 job boards for new listings matching your profile.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-sub">Search 8 free job boards for new listings matching your profile.</div>', unsafe_allow_html=True)
 
     cfg = load_config()
     queries = cfg.get("job_titles", [])
@@ -355,25 +388,23 @@ elif "Search" in page:
 
     sources = [
         "RemoteOK", "Arbeitnow", "The Muse", "HN Who's Hiring",
-        "Remotive", "Jobicy", "We Work Remotely", "Working Nomads", "Himalayas"
+        "Remotive", "Jobicy", "Working Nomads", "Himalayas",
     ]
-    cols = st.columns(5)
+    cols = st.columns(4)
     for i, src in enumerate(sources):
-        cols[i % 5].markdown(
+        cols[i % 4].markdown(
             f'<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;'
             f'padding:8px 12px;text-align:center;font-size:0.8rem;color:#94a3b8;margin-bottom:8px">'
             f'✓ {src}</div>',
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
 
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
     if st.button("🔍  Start Search", type="primary"):
-        st.markdown("### Live Output")
-        rc = run_command([PYTHON, "main.py", "search"])
-        if rc == 0:
-            st.success("Done! Go to **Matched Jobs** after running Match.")
-        st.rerun()
+        launch_task([PYTHON, "main.py", "search"], "task_search")
+
+    render_task_panel("task_search", "Search Jobs")
 
     found = database.get_jobs_by_status("found")
     if found:
@@ -422,17 +453,20 @@ elif "Matched" in page:
         else:
             filtered.sort(key=lambda j: j.get("match_score") or 0, reverse=True)
 
-        st.markdown(f'<div class="page-sub">Showing {len(filtered)} of {len(matched)} matched jobs</div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="page-sub">Showing {len(filtered)} of {len(matched)} matched jobs</div>',
+            unsafe_allow_html=True,
+        )
 
         for job in filtered:
-            score   = job.get("match_score") or 0
-            title   = (job.get("title")   or "Unknown")
-            company = (job.get("company") or "Unknown")
-            location= (job.get("location") or "")
-            source  = job.get("source") or ""
-            url     = job.get("url") or ""
-            salary  = job.get("salary") or ""
-            desc    = (job.get("description") or "")[:500]
+            score    = job.get("match_score") or 0
+            title    = job.get("title")   or "Unknown"
+            company  = job.get("company") or "Unknown"
+            location = job.get("location") or ""
+            source   = job.get("source") or ""
+            url      = job.get("url") or ""
+            salary   = job.get("salary") or ""
+            desc     = (job.get("description") or "")[:500]
 
             matched_skills: list[str] = []
             try:
@@ -445,33 +479,30 @@ elif "Matched" in page:
             skills_html = " ".join(
                 f'<span class="skill-tag">{s}</span>' for s in matched_skills[:10]
             )
-            salary_html = f'<span style="color:#34d399;font-size:0.82rem">💰 {salary}</span>&nbsp;&nbsp;' if salary else ""
+            salary_html = (
+                f'<span style="color:#34d399;font-size:0.82rem">💰 {salary}</span>&nbsp;&nbsp;'
+                if salary else ""
+            )
 
-            card_html = f"""
+            st.markdown(f"""
             <div class="job-card">
                 <div class="job-title">{title}</div>
-                <div class="job-meta">
-                    🏢 {company}&nbsp;&nbsp;
-                    📍 {location}&nbsp;&nbsp;
-                    🔗 {source}
-                </div>
+                <div class="job-meta">🏢 {company}&nbsp;&nbsp;📍 {location}&nbsp;&nbsp;🔗 {source}</div>
                 <span class="score-badge" style="background:{sc}22;color:{sc};border:1px solid {sc}44">
                     {score:.0f}% match
                 </span>
                 {salary_html}
                 <div style="margin-top:10px">{skills_html}</div>
-                <div class="desc">{desc[:400]}{"..." if len(desc)>=400 else ""}</div>
+                <div class="desc">{desc[:400]}{"..." if len(desc) >= 400 else ""}</div>
             </div>
-            """
-            st.markdown(card_html, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
-            btn_col1, btn_col2, _ = st.columns([1, 1, 5])
+            btn1, btn2, _ = st.columns([1, 1, 5])
             if url:
-                btn_col1.link_button("🌐 Open Job", url, use_container_width=True)
-            if btn_col2.button("✕ Skip", key=f"skip_{job['id']}", use_container_width=True):
-                database.set_match(job["id"], 0, json.dumps({"reason": "Manually skipped by user"}))
+                btn1.link_button("🌐 Open Job", url, use_container_width=True)
+            if btn2.button("✕ Skip", key=f"skip_{job['id']}", use_container_width=True):
+                database.set_match(job["id"], 0, json.dumps({"reason": "Manually skipped"}))
                 st.rerun()
-
             st.markdown("")
 
 
@@ -492,9 +523,10 @@ elif "Apply" in page:
             f'<div style="background:#1e293b;border:1px solid #334155;border-radius:12px;'
             f'padding:16px 20px;margin-bottom:1rem">'
             f'<b style="color:#34d399;font-size:1.1rem">✅ {len(matched)} jobs ready to apply to</b><br>'
-            f'<span style="color:#94a3b8;font-size:0.85rem">The bot will fill forms automatically and ask for your confirmation before submitting.</span>'
+            f'<span style="color:#94a3b8;font-size:0.85rem">'
+            f'The bot will open each job link and guide you through applying.</span>'
             f'</div>',
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
 
         max_apply = st.number_input("Max applications per run", 1, 50, 10)
@@ -509,26 +541,26 @@ elif "Apply" in page:
             url     = job.get("url") or ""
             sc      = score_color(score)
 
-            col1, col2, col3, col4 = st.columns([4, 1, 1, 1])
+            col1, col2, col3 = st.columns([5, 1, 1])
             col1.markdown(
                 f'<div style="padding:6px 0"><b style="color:#e2e8f0">{title}</b>'
                 f'<span style="color:#64748b"> · {company}</span><br>'
                 f'<span style="color:#475569;font-size:0.8rem">📍 {location}</span></div>',
-                unsafe_allow_html=True
+                unsafe_allow_html=True,
             )
             col2.markdown(
                 f'<div style="padding-top:8px;font-weight:700;color:{sc}">{score:.0f}%</div>',
-                unsafe_allow_html=True
+                unsafe_allow_html=True,
             )
             if url:
                 col3.link_button("View", url, use_container_width=True)
 
         st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
-        st.info("💡 The apply process runs in your terminal so you can type **y/n** for each job. Click below to launch it.")
 
-        if st.button("🚀 Start Applying", type="primary", use_container_width=False):
-            st.markdown("### Output")
-            run_command([PYTHON, "main.py", "apply", "--max", str(int(max_apply))])
+        if st.button("🚀 Start Applying", type="primary"):
+            launch_task([PYTHON, "main.py", "apply", "--max", str(int(max_apply))], "task_apply")
+
+        render_task_panel("task_apply", "Apply to Jobs")
 
 
 # ---------------------------------------------------------------------------
@@ -541,7 +573,6 @@ elif "Settings" in page:
 
     cfg = load_config()
 
-    # Job queries
     with st.expander("🔍 Job Search Queries", expanded=True):
         titles_raw = st.text_area(
             "One search query per line",
@@ -551,7 +582,6 @@ elif "Settings" in page:
         )
         st.caption(f"{len([t for t in titles_raw.splitlines() if t.strip()])} queries active")
 
-    # Matching
     with st.expander("🎯 Matching Settings", expanded=True):
         col1, col2 = st.columns(2)
         with col1:
@@ -559,7 +589,6 @@ elif "Settings" in page:
         with col2:
             remote_only = st.checkbox("Remote jobs only", value=cfg.get("remote_only", False))
 
-    # Profile
     with st.expander("👤 Your Profile", expanded=True):
         profile = cfg.get("profile", {})
         col1, col2 = st.columns(2)
