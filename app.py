@@ -427,46 +427,57 @@ elif "Search" in page:
 
 elif "Matched" in page:
     st.markdown('<div class="page-title">🎯 Matched Jobs</div>', unsafe_allow_html=True)
-    st.markdown('<div class="page-sub">Jobs scoring ≥70% against your profile — ready to apply.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-sub">Jobs scoring ≥70% against your profile — grouped by source site.</div>', unsafe_allow_html=True)
 
     matched = database.get_jobs_by_status("matched")
 
     if not matched:
         st.warning("No matched jobs yet. Run **Search** then **Match Jobs** from the Dashboard.")
     else:
-        col1, col2, col3 = st.columns(3)
+        # Filters
+        col1, col2 = st.columns(2)
         with col1:
-            source_options = ["All"] + sorted(set(j["source"] for j in matched))
-            source_filter = st.selectbox("Source", source_options)
-        with col2:
             min_score = st.slider("Min score", 70, 100, 70)
-        with col3:
+        with col2:
             sort_by = st.selectbox("Sort by", ["Score (high→low)", "Company A→Z"])
 
-        filtered = [
-            j for j in matched
-            if (source_filter == "All" or j["source"] == source_filter)
-            and (j.get("match_score") or 0) >= min_score
-        ]
+        filtered = [j for j in matched if (j.get("match_score") or 0) >= min_score]
         if "Company" in sort_by:
             filtered.sort(key=lambda j: (j.get("company") or "").lower())
         else:
             filtered.sort(key=lambda j: j.get("match_score") or 0, reverse=True)
 
+        # Group by source
+        from collections import defaultdict
+        grouped: dict[str, list] = defaultdict(list)
+        for job in filtered:
+            grouped[job.get("source") or "Unknown"].append(job)
+
+        # Source icons
+        SOURCE_ICONS = {
+            "RemoteOK":      "🟢",
+            "Arbeitnow":     "🔵",
+            "TheMuse":       "🟣",
+            "HN Hiring":     "🟠",
+            "Remotive":      "🔴",
+            "Jobicy":        "🟡",
+            "WorkingNomads": "🌍",
+            "Himalayas":     "🏔️",
+        }
+
         st.markdown(
-            f'<div class="page-sub">Showing {len(filtered)} of {len(matched)} matched jobs</div>',
+            f'<div class="page-sub">Showing <b>{len(filtered)}</b> jobs across <b>{len(grouped)}</b> sources</div>',
             unsafe_allow_html=True,
         )
 
-        for job in filtered:
+        def render_job_card(job, page_key="matched"):
             score    = job.get("match_score") or 0
             title    = job.get("title")   or "Unknown"
             company  = job.get("company") or "Unknown"
             location = job.get("location") or ""
-            source   = job.get("source") or ""
             url      = job.get("url") or ""
             salary   = job.get("salary") or ""
-            desc     = (job.get("description") or "")[:500]
+            desc     = (job.get("description") or "")[:400]
 
             matched_skills: list[str] = []
             try:
@@ -487,23 +498,30 @@ elif "Matched" in page:
             st.markdown(f"""
             <div class="job-card">
                 <div class="job-title">{title}</div>
-                <div class="job-meta">🏢 {company}&nbsp;&nbsp;📍 {location}&nbsp;&nbsp;🔗 {source}</div>
+                <div class="job-meta">🏢 {company}&nbsp;&nbsp;📍 {location}</div>
                 <span class="score-badge" style="background:{sc}22;color:{sc};border:1px solid {sc}44">
                     {score:.0f}% match
                 </span>
                 {salary_html}
                 <div style="margin-top:10px">{skills_html}</div>
-                <div class="desc">{desc[:400]}{"..." if len(desc) >= 400 else ""}</div>
+                <div class="desc">{desc}{"..." if len(job.get("description") or "") > 400 else ""}</div>
             </div>
             """, unsafe_allow_html=True)
 
             btn1, btn2, _ = st.columns([1, 1, 5])
             if url:
                 btn1.link_button("🌐 Open Job", url, use_container_width=True)
-            if btn2.button("✕ Skip", key=f"skip_{job['id']}", use_container_width=True):
+            if btn2.button("✕ Skip", key=f"skip_{page_key}_{job['id']}", use_container_width=True):
                 database.set_match(job["id"], 0, json.dumps({"reason": "Manually skipped"}))
                 st.rerun()
             st.markdown("")
+
+        # Render each source as a collapsible section
+        for source, jobs in sorted(grouped.items(), key=lambda x: -len(x[1])):
+            icon = SOURCE_ICONS.get(source, "🔷")
+            with st.expander(f"{icon} {source}  —  {len(jobs)} job{'s' if len(jobs) != 1 else ''}", expanded=True):
+                for job in jobs:
+                    render_job_card(job, page_key=source)
 
 
 # ---------------------------------------------------------------------------
