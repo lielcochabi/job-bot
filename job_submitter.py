@@ -30,8 +30,9 @@ import database
 
 def send_notification(job: dict, method: str) -> None:
     """Send a notification email to NOTIFY_EMAIL after a job is applied to."""
-    notify_email = os.environ.get("NOTIFY_EMAIL", "")
-    app_password = os.environ.get("GMAIL_APP_PASSWORD", "")
+    from secrets_manager import get_secret
+    notify_email = get_secret("NOTIFY_EMAIL")
+    app_password = get_secret("GMAIL_APP_PASSWORD")
 
     if not notify_email or not app_password:
         return  # silently skip if not configured

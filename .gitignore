@@ -8,3 +8,5 @@ venv/
 manual_apply.csv
 jobs_to_score.json
 score_jobs.py
+.streamlit/secrets.toml
+uploaded_resume.*

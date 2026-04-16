@@ -12,6 +12,12 @@ from pathlib import Path
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).parent))
+
+# Load secrets from Streamlit Cloud vault (or .env locally) into os.environ
+# This must happen before any other import that reads os.environ
+import secrets_manager
+secrets_manager.inject_all_into_env()
+
 import database
 
 # ---------------------------------------------------------------------------
