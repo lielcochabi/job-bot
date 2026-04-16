@@ -69,6 +69,35 @@ DEFAULT_SKILL_WEIGHTS: dict[str, int] = {
     "vr": 4,
     "xr": 4,
     "blueprint": 3,
+    # Other languages
+    "c++": 8,
+    "c#": 8,
+    "typescript": 6,
+    "node.js": 5,
+    "golang": 5,
+    "rust": 5,
+    "java": 4,
+    # Messaging / search
+    "kafka": 5,
+    "rabbitmq": 4,
+    "elasticsearch": 5,
+    # Python tooling
+    "celery": 4,
+    "pytest": 3,
+    # Infra / monitoring
+    "nginx": 3,
+    "prometheus": 3,
+    "grafana": 3,
+    # Protocols
+    "websocket": 4,
+    "grpc": 5,
+    # BaaS
+    "supabase": 5,
+    "firebase": 4,
+    # ML frameworks
+    "pytorch": 7,
+    "tensorflow": 6,
+    "huggingface": 7,
 }
 
 # ---------------------------------------------------------------------------
@@ -79,7 +108,7 @@ _SENIOR_TITLE_WORDS = {
     "senior", "lead", "principal", "staff", "manager", "director",
     "head of", "vp ", "vice president", "architect", "founding engineer",
     "tech lead", "team lead", "engineering manager", "cto", "cpo",
-    "sr.", "sr ", "distinguished", "site reliability engineer",
+    "sr.", "sr ", "distinguished",
     " v ", " iv ", " iii ",  # "Software Engineer V", "Engineer III"
 }
 
@@ -140,6 +169,18 @@ _NON_TECH_TITLES = {
     "system safety engineer", "supplier quality", "sales manager",
     "customer service", "brand personality", "influencer",
     "administrative", "reception",
+    # QA / testing
+    "qa engineer", "test engineer", "quality assurance", "manual tester",
+    # Writing / process
+    "technical writer", "scrum master", "agile coach",
+    # Analysis (different from engineering)
+    "data analyst",
+    # IT support
+    "it support", "help desk", "helpdesk", "technical support",
+    # Networking / sysadmin
+    "network engineer", "system administrator", "sysadmin",
+    # Hardware
+    "hardware engineer", "embedded engineer",
 }
 
 # ---------------------------------------------------------------------------
@@ -153,6 +194,14 @@ _HIGH_EXP_PATTERNS = [
     r"\bat\s+least\s+[3-9]\s*years?",
     r"\b[3-9]\s*[-–]\s*\d+\s*years?\s*(of\s+)?experience",
     r"\bexperience[:\s]+[3-9]\+?\s*years?",
+]
+
+# Patterns that mean "requires 2+ years" → soft penalty (-15 pts)
+_MED_EXP_PATTERNS = [
+    r"\b2\+\s*years?\s*(of\s+)?(professional\s+)?experience",
+    r"\bminimum\s+2\s*years?",
+    r"\b2\s*[-–]\s*[4-9]\s*years?\s*(of\s+)?experience",
+    r"\bexperience[:\s]+2\+?\s*years?",
 ]
 
 # Patterns that confirm entry/junior level → boost
@@ -176,6 +225,7 @@ def _experience_pts(title: str, desc: str) -> tuple[int, str]:
     """
     Returns (points, reason).
     Hard blocks (return -999) if description requires 3+ years experience.
+    Returns (-15, reason) if description requires 2+ years experience.
     """
     combined = (title + " " + desc[:1500]).lower()
 
@@ -183,6 +233,11 @@ def _experience_pts(title: str, desc: str) -> tuple[int, str]:
     for pattern in _HIGH_EXP_PATTERNS:
         if re.search(pattern, combined):
             return -999, f"Requires 3+ years experience"
+
+    # Check for medium experience requirements → soft penalty
+    for pattern in _MED_EXP_PATTERNS:
+        if re.search(pattern, combined):
+            return -15, "Requires 2+ years experience"
 
     # Check for explicit entry/junior signals → bonus
     for pattern in _LOW_EXP_PATTERNS:
@@ -205,6 +260,12 @@ _REMOTE_KEYWORDS = {
 _GOOD_REGIONS = {
     "eu", "europe", "emea", "israel", "apac", "international",
     "worldwide", "global",
+}
+
+_GOOD_LOCATIONS = {
+    "israel", "tel aviv", "herzliya", "netanya", "haifa",
+    "raanana", "ra'anana", "petah tikva", "petah-tikva",
+    "beer sheva", "rehovot", "rishon",
 }
 
 _US_ONLY_PHRASES = [
@@ -282,6 +343,9 @@ def _location_pts(job: dict) -> int:
     if any(city in loc for city in _GERMAN_CITIES):
         if not any(kw in combined for kw in _REMOTE_KEYWORDS):
             return -20
+    # Israeli city in location = good location
+    if any(city in loc for city in _GOOD_LOCATIONS):
+        return 5
     if any(kw in combined for kw in _REMOTE_KEYWORDS | _GOOD_REGIONS):
         return 0
     return -10  # unknown — slight penalty
@@ -330,6 +394,9 @@ def _relevance_bonus(title: str, desc: str) -> int:
 
     if any(kw in t + " " + d[:100] for kw in ["llm", "ai engineer", "ml engineer", "dspy", "langchain", "agentic"]):
         bonus += 5
+
+    if any(kw in t for kw in ["unity", "unreal", "game developer", "game engineer", "c++", "gameplay"]):
+        bonus += 8
 
     return bonus
 

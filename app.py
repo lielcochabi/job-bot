@@ -371,7 +371,7 @@ if "Dashboard" in page:
 
 elif "Search" in page:
     st.markdown('<div class="page-title">🔍 Search Jobs</div>', unsafe_allow_html=True)
-    st.markdown('<div class="page-sub">Search 8 free job boards for new listings matching your profile.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-sub">Search free job boards for new listings matching your profile.</div>', unsafe_allow_html=True)
 
     cfg = load_config()
     queries = cfg.get("job_titles", [])
@@ -512,55 +512,80 @@ elif "Matched" in page:
 
 elif "Apply" in page:
     st.markdown('<div class="page-title">🚀 Apply to Jobs</div>', unsafe_allow_html=True)
-    st.markdown('<div class="page-sub">Review matched jobs and submit applications.</div>', unsafe_allow_html=True)
 
     matched = database.get_jobs_by_status("matched")
+    applied_count = stats.get("applied", 0)
+    remaining_count = len(matched)
+    total_pipeline = applied_count + remaining_count
+
+    st.markdown(
+        f'<div class="page-sub">📊 {applied_count} applied · {remaining_count} remaining</div>',
+        unsafe_allow_html=True,
+    )
+
+    if total_pipeline > 0:
+        st.progress(applied_count / total_pipeline)
 
     if not matched:
         st.warning("No matched jobs. Run **Search** then **Match Jobs** first.")
     else:
-        st.markdown(
-            f'<div style="background:#1e293b;border:1px solid #334155;border-radius:12px;'
-            f'padding:16px 20px;margin-bottom:1rem">'
-            f'<b style="color:#34d399;font-size:1.1rem">✅ {len(matched)} jobs ready to apply to</b><br>'
-            f'<span style="color:#94a3b8;font-size:0.85rem">'
-            f'The bot will open each job link and guide you through applying.</span>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-
-        max_apply = st.number_input("Max applications per run", 1, 50, 10)
-        st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
-
-        st.markdown("### Jobs in Queue")
         for job in matched:
-            score   = job.get("match_score") or 0
-            title   = (job.get("title")   or "Unknown")[:55]
-            company = (job.get("company") or "Unknown")[:25]
-            location= (job.get("location") or "")[:20]
-            url     = job.get("url") or ""
-            sc      = score_color(score)
+            job_id   = job["id"]
+            score    = job.get("match_score") or 0
+            title    = job.get("title")   or "Unknown"
+            company  = job.get("company") or "Unknown"
+            location = job.get("location") or ""
+            url      = job.get("url") or ""
+            salary   = job.get("salary") or ""
+            desc     = (job.get("description") or "")[:350]
 
-            col1, col2, col3 = st.columns([5, 1, 1])
-            col1.markdown(
-                f'<div style="padding:6px 0"><b style="color:#e2e8f0">{title}</b>'
-                f'<span style="color:#64748b"> · {company}</span><br>'
-                f'<span style="color:#475569;font-size:0.8rem">📍 {location}</span></div>',
-                unsafe_allow_html=True,
+            matched_skills: list[str] = []
+            try:
+                rd = json.loads(job.get("match_reason") or "{}")
+                matched_skills = rd.get("matched", [])
+            except Exception:
+                pass
+
+            sc = score_color(score)
+            skills_html = " ".join(
+                f'<span class="skill-tag">{s}</span>' for s in matched_skills[:10]
             )
-            col2.markdown(
-                f'<div style="padding-top:8px;font-weight:700;color:{sc}">{score:.0f}%</div>',
-                unsafe_allow_html=True,
+            salary_html = (
+                f'<span style="color:#34d399;font-size:0.82rem">💰 {salary}</span>&nbsp;&nbsp;'
+                if salary else ""
             )
+
+            st.markdown(f"""
+            <div class="job-card">
+                <div class="job-title">{title}</div>
+                <div class="job-meta">🏢 {company}&nbsp;&nbsp;📍 {location}</div>
+                <span class="score-badge" style="background:{sc}22;color:{sc};border:1px solid {sc}44">
+                    {score:.0f}% match
+                </span>
+                {salary_html}
+                <div style="margin-top:10px">{skills_html}</div>
+                <div class="desc">{desc}{"..." if len(job.get("description") or "") > 350 else ""}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            btn_open, btn_applied, btn_later, btn_skip = st.columns(4)
+
             if url:
-                col3.link_button("View", url, use_container_width=True)
+                btn_open.link_button("🌐 Open Job", url, use_container_width=True)
+            else:
+                btn_open.button("🌐 Open Job", key=f"open_{job_id}", disabled=True, use_container_width=True)
 
-        st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+            if btn_applied.button("✅ Mark as Applied", key=f"applied_{job_id}", use_container_width=True):
+                database.set_applied(job_id)
+                st.rerun()
 
-        if st.button("🚀 Start Applying", type="primary"):
-            launch_task([PYTHON, "main.py", "apply", "--max", str(int(max_apply))], "task_apply")
+            btn_later.button("⏭ Keep for Later", key=f"later_{job_id}", use_container_width=True)
 
-        render_task_panel("task_apply", "Apply to Jobs")
+            if btn_skip.button("✕ Not Interested", key=f"skip_{job_id}", use_container_width=True):
+                database.set_match(job_id, 0, json.dumps({"reason": "Not interested"}))
+                st.rerun()
+
+            st.markdown("")
 
 
 # ---------------------------------------------------------------------------
@@ -572,6 +597,48 @@ elif "Settings" in page:
     st.markdown('<div class="page-sub">Configure your job search, profile, and matching preferences.</div>', unsafe_allow_html=True)
 
     cfg = load_config()
+
+    with st.expander("📄 Resume", expanded=True):
+        existing_resume = database.get_resume_content()
+        if existing_resume:
+            st.caption(f"✅ Resume in system — {len(existing_resume):,} characters detected")
+        else:
+            st.caption("⚠️ No resume uploaded yet.")
+
+        uploaded = st.file_uploader(
+            "Upload your resume to auto-fill your profile and improve matching",
+            type=["pdf", "docx"],
+            label_visibility="collapsed",
+        )
+
+        if uploaded is not None:
+            import tempfile
+            import resume_parser as rp
+            suffix = Path(uploaded.name).suffix.lower()
+            resume_path = BOT_DIR / f"uploaded_resume{suffix}"
+            resume_path.write_bytes(uploaded.getvalue())
+
+            text = rp.extract_text(resume_path)
+            if text and not text.startswith("["):
+                database.save_resume(str(resume_path), text)
+                profile_data = rp.extract_resume_profile(text)
+                st.session_state["auto_profile"] = profile_data
+
+                st.success(f"✅ Parsed **{uploaded.name}** — {len(text):,} characters")
+
+                if profile_data.get("skills"):
+                    st.markdown("**Detected skills:**")
+                    skills_html = " ".join(
+                        f'<span class="skill-tag">{s}</span>'
+                        for s in profile_data["skills"]
+                    )
+                    st.markdown(skills_html, unsafe_allow_html=True)
+
+                col_a, col_b = st.columns(2)
+                if col_a.button("⬇️ Auto-fill Profile from Resume", type="primary"):
+                    st.rerun()
+            else:
+                st.error(f"Could not parse {uploaded.name}. Try a different file.")
 
     with st.expander("🔍 Job Search Queries", expanded=True):
         titles_raw = st.text_area(
@@ -590,7 +657,8 @@ elif "Settings" in page:
             remote_only = st.checkbox("Remote jobs only", value=cfg.get("remote_only", False))
 
     with st.expander("👤 Your Profile", expanded=True):
-        profile = cfg.get("profile", {})
+        auto_profile = st.session_state.get("auto_profile", {})
+        profile = {**cfg.get("profile", {}), **auto_profile}  # session_state takes priority
         col1, col2 = st.columns(2)
         with col1:
             name     = st.text_input("Full Name",  value=profile.get("name", ""))
