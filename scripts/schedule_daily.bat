@@ -3,9 +3,9 @@
 :: Run this file ONCE as Administrator to set it up
 
 set TASK_NAME=JobBotDailyRun
-set BOT_DIR=%~dp0
+set BOT_DIR=%~dp0..
 set PYTHON=python
-set SCRIPT=%BOT_DIR%main.py
+set SCRIPT=%BOT_DIR%\main.py
 
 echo Setting up daily Job Bot task at 8:00 AM...
 

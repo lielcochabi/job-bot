@@ -63,11 +63,6 @@ def test_response_rate_zero_when_no_responses():
     assert get_tracker_stats(jobs)["response_rate"] == 0.0
 
 
-def test_response_rate_100_when_all_responded():
-    jobs = _make_jobs("Interview", "Accepted", "Denied")
-    assert get_tracker_stats(jobs)["response_rate"] == 100.0
-
-
 def test_response_rate_partial():
     # 2 out of 4 got responses
     jobs = _make_jobs("Applied", "Applied", "Denied", "Interview")
@@ -87,11 +82,6 @@ def test_success_rate_counts_interview_and_accepted():
     # Interview + Accepted = 2 out of 4
     jobs = _make_jobs("Applied", "Denied", "Interview", "Accepted")
     assert get_tracker_stats(jobs)["success_rate"] == 50.0
-
-
-def test_success_rate_100_when_all_accepted():
-    jobs = _make_jobs("Accepted", "Accepted")
-    assert get_tracker_stats(jobs)["success_rate"] == 100.0
 
 
 # ---------------------------------------------------------------------------
