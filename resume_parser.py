@@ -181,8 +181,7 @@ def extract_resume_profile(resume_text: str) -> dict:
     if year_matches:
         years = [int(y) for y in year_matches]
         earliest = min(years)
-        # Subtract ~18 for education start, then measure work years
-        exp_years = max(0, current_year - earliest - 4)
+        exp_years = max(0, current_year - earliest)
     else:
         exp_years = 0
 

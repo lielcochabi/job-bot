@@ -5,6 +5,7 @@ Run with: streamlit run app.py
 import json
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -13,8 +14,9 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-# Load secrets from Streamlit Cloud vault (or .env locally) into os.environ
-# This must happen before any other import that reads os.environ
+# Load .env then push st.secrets — must happen before any env reads
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).parent / ".env", override=True)
 import secrets_manager
 secrets_manager.inject_all_into_env()
 
@@ -143,34 +145,33 @@ st.markdown("""
 # ---------------------------------------------------------------------------
 
 def launch_task(cmd: list, task_key: str):
-    """Start a subprocess in a background thread; track output in session_state."""
+    """Start a subprocess; stream output to a temp file, track state in session_state."""
+    log_path = Path(tempfile.mktemp(suffix=".log", prefix="jobbot_"))
     st.session_state[task_key] = {
         "running": True,
-        "lines": [],
+        "log_file": str(log_path),
         "returncode": None,
         "visible": True,
     }
 
     def _run():
         try:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                cwd=str(BOT_DIR),
-            )
-            for raw in proc.stdout:
-                line = raw.rstrip()
-                if line:
-                    st.session_state[task_key]["lines"].append(line)
-            proc.wait()
+            with open(log_path, "w", encoding="utf-8", errors="replace") as f:
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=f,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    cwd=str(BOT_DIR),
+                )
+                proc.wait()
             st.session_state[task_key]["running"] = False
             st.session_state[task_key]["returncode"] = proc.returncode
         except Exception as exc:
-            st.session_state[task_key]["lines"].append(f"Launch error: {exc}")
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"Launch error: {exc}\n")
             st.session_state[task_key]["running"] = False
             st.session_state[task_key]["returncode"] = 1
 
@@ -206,8 +207,17 @@ def render_task_panel(task_key: str, title: str) -> bool:
         return False
 
     running  = state["running"]
-    lines    = state["lines"]
     rc       = state["returncode"]
+
+    # Read output from temp file (thread-safe, no session_state write conflicts)
+    log_path = Path(state.get("log_file", ""))
+    lines: list[str] = []
+    if log_path.exists():
+        try:
+            lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            lines = [l for l in lines if l.strip()]
+        except Exception:
+            pass
 
     # ── Header row ──────────────────────────────────────────────────────────
     header_col, close_col = st.columns([11, 1])
@@ -305,7 +315,7 @@ with st.sidebar:
     st.markdown("---")
     page = st.radio(
         "nav",
-        ["🏠  Dashboard", "🔍  Search", "🎯  Matched Jobs", "🚀  Apply", "⚙️  Settings"],
+        ["🏠  Dashboard", "🔍  Search", "🎯  Matched Jobs", "🚀  Apply", "📊  Tracker", "⚙️  Settings"],
         label_visibility="collapsed",
     )
     st.markdown("---")
@@ -333,19 +343,21 @@ if "Dashboard" in page:
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
     st.markdown("### ⚡ Quick Actions")
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
 
     if col1.button("🔍 Search Jobs",   use_container_width=True):
         launch_task([PYTHON, "main.py", "search"], "task_search")
     if col2.button("🎯 Match Jobs",    use_container_width=True):
         launch_task([PYTHON, "main.py", "match"],  "task_match")
     if col3.button("🚀 Full Pipeline", use_container_width=True, type="primary"):
-        launch_task([PYTHON, "main.py", "run"],    "task_run")
-    if col4.button("🔄 Refresh Stats", use_container_width=True):
+        launch_task([PYTHON, "main.py", "run", "--auto"], "task_run")
+    if col4.button("🔁 Re-score All",  use_container_width=True):
+        launch_task([PYTHON, "main.py", "rematch"], "task_rematch")
+    if col5.button("🔄 Refresh Stats", use_container_width=True):
         st.rerun()
 
     # Show whichever task panel is active
-    for key, label in [("task_run", "Full Pipeline"), ("task_search", "Search Jobs"), ("task_match", "Match Jobs")]:
+    for key, label in [("task_run", "Full Pipeline"), ("task_search", "Search Jobs"), ("task_match", "Match Jobs"), ("task_rematch", "Re-score All")]:
         render_task_panel(key, label)
 
     # Recent matches preview
@@ -394,7 +406,7 @@ elif "Search" in page:
 
     sources = [
         "RemoteOK", "Arbeitnow", "The Muse", "HN Who's Hiring",
-        "Remotive", "Jobicy", "Working Nomads", "Himalayas",
+        "Remotive", "Jobicy", "Working Nomads", "Himalayas", "Drushim 🇮🇱",
     ]
     cols = st.columns(4)
     for i, src in enumerate(sources):
@@ -538,6 +550,8 @@ elif "Apply" in page:
     st.markdown('<div class="page-title">🚀 Apply to Jobs</div>', unsafe_allow_html=True)
 
     matched = database.get_jobs_by_status("matched")
+    snoozed = st.session_state.get("snoozed_jobs", set())
+    matched = [j for j in matched if j["id"] not in snoozed]
     applied_count = stats.get("applied", 0)
     remaining_count = len(matched)
     total_pipeline = applied_count + remaining_count
@@ -603,11 +617,107 @@ elif "Apply" in page:
                 database.set_applied(job_id)
                 st.rerun()
 
-            btn_later.button("⏭ Keep for Later", key=f"later_{job_id}", use_container_width=True)
+            if btn_later.button("⏭ Keep for Later", key=f"later_{job_id}", use_container_width=True):
+                if "snoozed_jobs" not in st.session_state:
+                    st.session_state["snoozed_jobs"] = set()
+                st.session_state["snoozed_jobs"].add(job_id)
+                st.rerun()
 
             if btn_skip.button("✕ Not Interested", key=f"skip_{job_id}", use_container_width=True):
                 database.set_match(job_id, 0, json.dumps({"reason": "Not interested"}))
                 st.rerun()
+
+            st.markdown("")
+
+
+# ---------------------------------------------------------------------------
+# Tracker
+# ---------------------------------------------------------------------------
+
+elif "Tracker" in page:
+    import tracker as _tracker
+
+    st.markdown('<div class="page-title">📊 Application Tracker</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-sub">Track the status of every job the bot processed — update as you hear back.</div>', unsafe_allow_html=True)
+
+    jobs = _tracker.get_all_jobs()
+
+    if not jobs:
+        st.info("No jobs tracked yet. Run the bot and apply to some jobs first.")
+    else:
+        # Summary stats
+        from collections import Counter
+        status_counts = Counter(j.get("Status", "") for j in jobs)
+        c1, c2, c3, c4, c5 = st.columns(5)
+        stat_card(c1, "Total",            len(jobs),                              "#60a5fa")
+        stat_card(c2, "Applied",          status_counts.get("Applied", 0),        "#a78bfa")
+        stat_card(c3, "Manual Pending",   status_counts.get("Manual - Pending", 0),"#fbbf24")
+        stat_card(c4, "Interview",        status_counts.get("Interview", 0),      "#34d399")
+        stat_card(c5, "Accepted",         status_counts.get("Accepted", 0),       "#22c55e")
+
+        st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+
+        # Download button
+        tracker_files = _tracker.list_tracker_files()
+        if tracker_files:
+            latest = tracker_files[-1]
+            with open(latest, "rb") as f:
+                st.download_button(
+                    "⬇️ Download Excel Tracker",
+                    data=f.read(),
+                    file_name=latest.name,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+
+        st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+
+        # Filter by status
+        all_statuses = ["All"] + _tracker.STATUS_OPTIONS
+        status_filter = st.selectbox("Filter by status", all_statuses)
+        filtered = jobs if status_filter == "All" else [j for j in jobs if j.get("Status") == status_filter]
+
+        st.markdown(f"**{len(filtered)} job(s)**")
+
+        # Render each job as a card with status update dropdown
+        for i, job in enumerate(filtered):
+            url     = job.get("URL", "")
+            title   = job.get("Job Title", "Unknown")
+            company = job.get("Company", "Unknown")
+            status  = job.get("Status", "Applied")
+            date    = job.get("Date Applied", "")
+            score   = job.get("Match Score", "")
+            method  = job.get("Method", "")
+
+            sc = {"Applied": "#a78bfa", "Manual - Pending": "#fbbf24",
+                  "Interview": "#34d399", "Accepted": "#22c55e", "Denied": "#f87171"}.get(status, "#94a3b8")
+
+            st.markdown(f"""
+            <div class="job-card">
+                <div class="job-title">{title}</div>
+                <div class="job-meta">🏢 {company} &nbsp;·&nbsp; 📅 {date} &nbsp;·&nbsp; 🎯 {score} &nbsp;·&nbsp; 📨 {method}</div>
+                <span class="score-badge" style="background:{sc}22;color:{sc};border:1px solid {sc}44">{status}</span>
+            </div>
+            """, unsafe_allow_html=True)
+
+            col_status, col_notes, col_save, col_open = st.columns([2, 3, 1, 1])
+            with col_status:
+                new_status = st.selectbox(
+                    "Status",
+                    _tracker.STATUS_OPTIONS,
+                    index=_tracker.STATUS_OPTIONS.index(status) if status in _tracker.STATUS_OPTIONS else 0,
+                    key=f"status_{i}",
+                    label_visibility="collapsed",
+                )
+            with col_notes:
+                notes = st.text_input("Notes", value=job.get("Notes", "") or "", key=f"notes_{i}", label_visibility="collapsed", placeholder="Add notes...")
+            with col_save:
+                if st.button("💾 Save", key=f"save_{i}", use_container_width=True):
+                    _tracker.update_status(url, new_status, notes)
+                    st.success("Saved!")
+                    st.rerun()
+            with col_open:
+                if url:
+                    st.link_button("🌐 Open", url, use_container_width=True)
 
             st.markdown("")
 
@@ -673,12 +783,24 @@ elif "Settings" in page:
         )
         st.caption(f"{len([t for t in titles_raw.splitlines() if t.strip()])} queries active")
 
+    with st.expander("🚫 Company Blacklist", expanded=False):
+        st.caption("Jobs from these companies will be automatically skipped. One company per line.")
+        blacklist_raw = st.text_area(
+            "Blacklisted companies",
+            value="\n".join(cfg.get("blacklisted_companies", [])),
+            height=150,
+            label_visibility="collapsed",
+            placeholder="e.g.\nAmazon\nUber\nMeta",
+        )
+
     with st.expander("🎯 Matching Settings", expanded=True):
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         with col1:
             threshold = st.slider("Match threshold (%)", 50, 95, int(cfg.get("match_threshold", 70)))
         with col2:
             remote_only = st.checkbox("Remote jobs only", value=cfg.get("remote_only", False))
+        with col3:
+            expiry_days = st.number_input("Auto-expire jobs after (days)", min_value=7, max_value=90, value=int(cfg.get("job_expiry_days", 30)))
 
     with st.expander("👤 Your Profile", expanded=True):
         auto_profile = st.session_state.get("auto_profile", {})
@@ -697,9 +819,11 @@ elif "Settings" in page:
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
     if st.button("💾  Save Settings", type="primary"):
-        cfg["job_titles"]      = [t.strip() for t in titles_raw.splitlines() if t.strip()]
-        cfg["match_threshold"] = threshold
-        cfg["remote_only"]     = remote_only
+        cfg["job_titles"]           = [t.strip() for t in titles_raw.splitlines() if t.strip()]
+        cfg["blacklisted_companies"] = [t.strip() for t in blacklist_raw.splitlines() if t.strip()]
+        cfg["match_threshold"]  = threshold
+        cfg["remote_only"]      = remote_only
+        cfg["job_expiry_days"]  = expiry_days
         cfg["profile"] = {
             "name": name, "email": email, "phone": phone,
             "city": city, "website": website,

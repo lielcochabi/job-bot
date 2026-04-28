@@ -135,6 +135,29 @@ def get_stats() -> dict:
     }
 
 
+def expire_old_jobs(days: int = 30) -> int:
+    """Delete jobs older than `days` days that haven't been applied to. Returns count deleted."""
+    with get_conn() as conn:
+        cur = conn.execute(
+            """DELETE FROM jobs
+               WHERE status NOT IN ('applied')
+               AND found_at < datetime('now', ?)""",
+            (f"-{days} days",),
+        )
+        return cur.rowcount
+
+
+def reset_scores_for_rematch() -> int:
+    """Reset all non-applied jobs back to unscored so they can be re-matched. Returns count reset."""
+    with get_conn() as conn:
+        cur = conn.execute(
+            """UPDATE jobs
+               SET match_score = NULL, match_reason = NULL, status = 'found'
+               WHERE status NOT IN ('applied')"""
+        )
+        return cur.rowcount
+
+
 def save_resume(path: str, content: str) -> None:
     with get_conn() as conn:
         conn.execute(
