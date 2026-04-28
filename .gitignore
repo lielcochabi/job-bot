@@ -1,12 +1,28 @@
+# Secrets & credentials
 .env
+.streamlit/secrets.toml
+
+# User data & runtime files
 *.db
 *.db-journal
+manual_apply.csv
+jobs_to_score.json
+config.json
+trackers/
+uploaded_resume.*
+
+# Temp logs from UI task runner
+*.log
+
+# Claude Code working directory
+.claude/
+
+# Python
 __pycache__/
 *.py[cod]
 .venv/
 venv/
-manual_apply.csv
-jobs_to_score.json
+.pytest_cache/
+
+# Old scripts
 score_jobs.py
-.streamlit/secrets.toml
-uploaded_resume.*
