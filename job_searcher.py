@@ -606,6 +606,103 @@ def search_himalayas(queries: list[str]) -> Generator[dict, None, None]:
 
 
 # ---------------------------------------------------------------------------
+# Source 11: Drushim (Israeli job board — server-rendered HTML, free)
+# ---------------------------------------------------------------------------
+
+def search_drushim(queries: list[str]) -> Generator[dict, None, None]:
+    """
+    Scrapes drushim.co.il — Israel's second-largest job board.
+    Uses the software/programming category (cat26) with keyword search.
+    """
+    from lxml import html as lxml_html
+
+    # Tech categories on Drushim
+    CATEGORY_URL = "https://www.drushim.co.il/jobs/cat26/"
+    seen: set[str] = set()
+
+    for query in queries:
+        for page in range(1, 4):
+            params = f"?q={query.replace(' ', '+')}&page={page}" if page > 1 else f"?q={query.replace(' ', '+')}"
+            url = CATEGORY_URL + params
+            try:
+                resp = httpx.get(url, headers=HEADERS, timeout=15)
+                resp.raise_for_status()
+                tree = lxml_html.fromstring(resp.content)
+
+                # Job links follow pattern /job/[id]/[hash]/
+                job_nodes = tree.xpath('//a[contains(@href, "/job/") and contains(@href, "/")]')
+                if not job_nodes:
+                    break
+
+                job_urls_seen_this_page = set()
+                for node in job_nodes:
+                    href = node.get("href", "")
+                    if not re.match(r"^/job/\d+/", href):
+                        continue
+                    full_url = f"https://www.drushim.co.il{href}"
+                    if full_url in seen or full_url in job_urls_seen_this_page:
+                        continue
+                    job_urls_seen_this_page.add(full_url)
+                    seen.add(full_url)
+
+                    # Try to get title from the link text or nearby h3
+                    parent = node.getparent()
+                    title = ""
+                    # Look for h3 in the same card
+                    h3_nodes = node.xpath('.//h3') or (parent.xpath('.//h3') if parent is not None else [])
+                    if h3_nodes:
+                        title = h3_nodes[0].text_content().strip()
+                    if not title:
+                        title = node.text_content().strip()
+                    if not title or len(title) < 3:
+                        continue
+
+                    # Company: look for nearby link with company path pattern
+                    company = ""
+                    company_nodes = (
+                        node.xpath('./following-sibling::a[contains(@href,"/דרושים-")]') or
+                        (parent.xpath('.//a[contains(@href,"/דרושים-")]') if parent is not None else [])
+                    )
+                    if company_nodes:
+                        company = company_nodes[0].text_content().strip()
+
+                    # Location: first span with Hebrew city name
+                    location = "Israel"
+                    span_nodes = parent.xpath('.//span') if parent is not None else []
+                    for span in span_nodes:
+                        txt = span.text_content().strip()
+                        if txt and 2 < len(txt) < 30 and not txt.isdigit():
+                            location = txt
+                            break
+
+                    if not _is_tech_job(title, ""):
+                        continue
+
+                    yield {
+                        "source": "Drushim",
+                        "external_id": re.search(r"/job/(\d+)/", href).group(1) if re.search(r"/job/(\d+)/", href) else href,
+                        "title": title,
+                        "company": company,
+                        "location": location,
+                        "salary": "",
+                        "url": full_url,
+                        "description": f"{title} at {company}. Location: {location}. Apply at {full_url}",
+                    }
+
+                time.sleep(1.5)
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code in (403, 429):
+                    raise RateLimited("Drushim")
+                print(f"  [Drushim] Error for '{query}' page {page}: {e}")
+                break
+            except RateLimited:
+                raise
+            except Exception as e:
+                print(f"  [Drushim] Error for '{query}' page {page}: {e}")
+                break
+
+
+# ---------------------------------------------------------------------------
 # Main search function
 # ---------------------------------------------------------------------------
 
@@ -625,7 +722,7 @@ def search_all_sources(
     and retried once after all other sources finish (with a 30s wait).
     """
     all_sources = ["remoteok", "arbeitnow", "themuse", "adzuna", "hn", "remotive", "jobicy",
-                   "workingnomads", "himalayas"]
+                   "workingnomads", "himalayas", "drushim"]
     enabled = set(s.lower() for s in (sources or all_sources))
 
     jobs: list[dict] = []
@@ -649,6 +746,7 @@ def search_all_sources(
         "jobicy":         ("Jobicy",             lambda: search_jobicy(queries),         True),
         "workingnomads":  ("Working Nomads",     lambda: search_workingnomads(queries),  True),
         "himalayas":      ("Himalayas",          lambda: search_himalayas(queries),      True),
+        "drushim":        ("Drushim (IL)",       lambda: search_drushim(queries),        True),
     }
 
     # Build ordered queue of sources to run

@@ -12,7 +12,6 @@ Usage:
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -50,13 +49,6 @@ def load_config() -> dict:
     return {}
 
 
-def require_api_key():
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        console.print("[red]Error:[/red] ANTHROPIC_API_KEY not set.")
-        console.print("Copy [bold].env.example[/bold] -> [bold].env[/bold] and add your key.")
-        raise typer.Exit(1)
-
-
 # ---------------------------------------------------------------------------
 # search
 # ---------------------------------------------------------------------------
@@ -83,6 +75,12 @@ def search(
         remote_only = cfg.get("remote_only", False)
 
     enabled_sources = [s.strip() for s in sources.split(",") if s.strip()] if sources else None
+
+    # Auto-expire old jobs before searching
+    expiry_days = cfg.get("job_expiry_days", 30)
+    expired = database.expire_old_jobs(days=expiry_days)
+    if expired:
+        console.print(f"  [dim]Removed {expired} expired jobs (older than {expiry_days} days)[/dim]")
 
     console.print(Panel.fit(
         f"[bold cyan]Searching for:[/bold cyan] {', '.join(queries)}\n"
@@ -130,8 +128,9 @@ def match(
     cfg = load_config()
     threshold = cfg.get("match_threshold", threshold)
 
-    # Load skill weights from config if provided
+    # Load skill weights and blacklist from config if provided
     skill_weights = cfg.get("skill_weights", None)
+    blacklisted_companies = cfg.get("blacklisted_companies", [])
 
     # Parse resumes (or use cached)
     console.print("[bold]Loading resume...[/bold]")
@@ -145,7 +144,11 @@ def match(
 
     unmatched = database.get_unmatched_jobs()
     if not unmatched:
-        console.print("[yellow]No unscored jobs. Run [bold]search[/bold] first.[/yellow]")
+        total = database.get_stats()["total"]
+        if total > 0:
+            console.print("[yellow]All jobs already scored. Run [bold]search[/bold] to fetch new listings.[/yellow]")
+        else:
+            console.print("[yellow]No jobs in database. Run [bold]search[/bold] first.[/yellow]")
         return
 
     console.print(Panel.fit(
@@ -156,7 +159,8 @@ def match(
     ))
 
     result = job_matcher.match_all_unmatched(
-        resume_text, threshold=threshold, verbose=True, skill_weights=skill_weights
+        resume_text, threshold=threshold, verbose=True,
+        skill_weights=skill_weights, blacklisted_companies=blacklisted_companies
     )
 
     console.print(
@@ -176,6 +180,7 @@ def apply(
     max_apply: int = typer.Option(20, "--max", help="Maximum number of applications to submit"),
 ):
     """Submit applications to all matched jobs."""
+    max_apply = max_apply if isinstance(max_apply, int) else 20
     database.init_db()
 
     cfg = load_config()
@@ -362,6 +367,41 @@ def setup():
 
 
 # ---------------------------------------------------------------------------
+# rematch
+# ---------------------------------------------------------------------------
+
+@app.command()
+def rematch(
+    threshold: float = typer.Option(None, "--threshold", "-t"),
+):
+    """Reset all job scores and re-run matching with current settings."""
+    database.init_db()
+    cfg = load_config()
+    if threshold is None:
+        threshold = cfg.get("match_threshold", 70.0)
+
+    count = database.reset_scores_for_rematch()
+    console.print(f"[yellow]Reset {count} jobs for re-matching...[/yellow]")
+
+    skill_weights = cfg.get("skill_weights", None)
+    blacklisted_companies = cfg.get("blacklisted_companies", [])
+
+    resume_text = database.get_resume_content()
+    if not resume_text:
+        resume_text = resume_parser.parse_all_resumes(verbose=False)
+
+    result = job_matcher.match_all_unmatched(
+        resume_text, threshold=threshold, verbose=True,
+        skill_weights=skill_weights, blacklisted_companies=blacklisted_companies
+    )
+    console.print(
+        f"\n[green][OK][/green] Re-scored {result['processed']} jobs — "
+        f"[bold green]{result['matched']} matched[/bold green], "
+        f"[dim]{result['skipped']} skipped[/dim]"
+    )
+
+
+# ---------------------------------------------------------------------------
 # run (full pipeline)
 # ---------------------------------------------------------------------------
 
@@ -373,6 +413,8 @@ def run(
     remote_only: bool = typer.Option(None, "--remote"),
 ):
     """Run the full pipeline: search -> match -> apply."""
+    max_apply = max_apply if isinstance(max_apply, int) else 20
+    threshold = threshold if isinstance(threshold, (int, float)) else None
     database.init_db()
     cfg = load_config()
 

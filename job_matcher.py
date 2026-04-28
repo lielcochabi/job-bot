@@ -330,25 +330,28 @@ def _is_tech_role(title: str) -> bool:
     return any(kw in t for kw in _ALLOWED_ROLE_KEYWORDS)
 
 
-def _location_pts(job: dict) -> int:
+def _location_pts(job: dict) -> tuple[int, bool]:
+    """Returns (points, hard_blocked). hard_blocked=True means reject entirely."""
     loc = (job.get("location") or "").lower()
     desc_head = (job.get("description") or "")[:500].lower()
     combined = loc + " " + desc_head
 
+    is_remote = any(kw in combined for kw in _REMOTE_KEYWORDS)
+    is_israel = any(city in loc for city in _GOOD_LOCATIONS) or "israel" in loc
+
+    # Hard block: not remote AND not in Israel
+    if not is_remote and not is_israel:
+        return -999, True
+
     if any(p in combined for p in _US_ONLY_PHRASES):
-        return -25
+        return -25, False
     if any(p in combined for p in _ONSITE_ONLY_PHRASES):
-        return -20
-    # German city in location without remote mention = on-site Germany
-    if any(city in loc for city in _GERMAN_CITIES):
-        if not any(kw in combined for kw in _REMOTE_KEYWORDS):
-            return -20
-    # Israeli city in location = good location
-    if any(city in loc for city in _GOOD_LOCATIONS):
-        return 5
-    if any(kw in combined for kw in _REMOTE_KEYWORDS | _GOOD_REGIONS):
-        return 0
-    return -10  # unknown — slight penalty
+        return -20, False
+    if is_israel:
+        return 5, False
+    if is_remote:
+        return 0, False
+    return -10, False
 
 
 def _language_pts(desc: str) -> int:
@@ -410,6 +413,7 @@ def match_job(
     resume_text: str,           # kept for API compatibility, not used in rule-based mode
     threshold: float = 70.0,
     skill_weights: Optional[dict[str, int]] = None,
+    blacklisted_companies: Optional[list[str]] = None,
 ) -> tuple[float, str]:
     """
     Score a job using rule-based logic. Returns (score 0-100, reason_json).
@@ -417,7 +421,17 @@ def match_job(
     """
     title = job.get("title") or ""
     desc = job.get("description") or ""
+    company = (job.get("company") or "").lower()
     weights = skill_weights or DEFAULT_SKILL_WEIGHTS
+
+    # 0. Company blacklist check
+    if blacklisted_companies:
+        for blocked in blacklisted_companies:
+            if blocked.lower() in company:
+                return 0.0, json.dumps({
+                    "reason": f"Company blacklisted: {job.get('company', '')}",
+                    "matched": [], "missing": [],
+                })
 
     # 1. Instant disqualify non-tech roles
     if not _is_tech_role(title):
@@ -441,8 +455,13 @@ def match_job(
     level = _seniority(title)
     level_pts = {"senior": -30, "junior": 15, "mid": 5}[level]
 
-    # 5. Location (0 to –25 pts)
-    loc_pts = _location_pts(job)
+    # 5. Location (0 to –25 pts, or hard block)
+    loc_pts, loc_blocked = _location_pts(job)
+    if loc_blocked:
+        return 0.0, json.dumps({
+            "reason": "Not remote and not in Israel — location blocked",
+            "matched": [], "missing": [],
+        })
 
     # 6. Language (0 to –25 pts)
     lang_pts = _language_pts(desc)
@@ -487,6 +506,7 @@ def match_all_unmatched(
     threshold: float = 70.0,
     verbose: bool = True,
     skill_weights: Optional[dict[str, int]] = None,
+    blacklisted_companies: Optional[list[str]] = None,
 ) -> dict:
     """Score all unscored jobs in the database. Returns stats dict."""
     jobs = database.get_unmatched_jobs()
@@ -503,7 +523,7 @@ def match_all_unmatched(
                 f" @ {(job.get('company') or 'Unknown')[:20].encode('ascii','replace').decode()}"
             )
 
-        score, reason = match_job(job, resume_text, threshold, skill_weights)
+        score, reason = match_job(job, resume_text, threshold, skill_weights, blacklisted_companies)
         database.set_match(job["id"], score, reason)
 
         label = "[MATCH]" if score >= threshold else "[skip] "

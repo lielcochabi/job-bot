@@ -14,6 +14,7 @@ import os
 import re
 import smtplib
 import time
+import urllib.parse
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
@@ -29,7 +30,7 @@ import database
 # ---------------------------------------------------------------------------
 
 def send_notification(job: dict, method: str) -> None:
-    """Send a notification email to NOTIFY_EMAIL after a job is applied to."""
+    """Send a notification email to NOTIFY_EMAIL after a job is processed."""
     from secrets_manager import get_secret
     notify_email = get_secret("NOTIFY_EMAIL")
     app_password = get_secret("GMAIL_APP_PASSWORD")
@@ -37,28 +38,50 @@ def send_notification(job: dict, method: str) -> None:
     if not notify_email or not app_password:
         return  # silently skip if not configured
 
-    try:
-        msg = MIMEMultipart()
-        msg["From"] = notify_email   # send from same Gmail address
-        msg["To"] = notify_email
-        msg["Subject"] = f"[Job Bot] Applied: {job['title']} @ {job.get('company', '?')}"
+    is_manual = method in ("Added to manual queue", "Manual queue")
+    score = job.get("match_score", 0)
+    url = job.get("url", "")
+    title = job.get("title", "?")
+    company = job.get("company", "Unknown")
 
-        score = job.get("match_score", 0)
-        body = f"""\
-Job Bot just submitted an application on your behalf!
+    if is_manual:
+        subject = f"[Job Bot] ACTION REQUIRED: Apply manually — {title} @ {company}"
+        action_block = f"""\
+⚠️  ACTION REQUIRED — The bot could NOT apply automatically.
+You need to apply to this job yourself.
 
-Position : {job['title']}
-Company  : {job.get('company', 'Unknown')}
+👉 Apply here: {url}
+"""
+    else:
+        subject = f"[Job Bot] ✅ Auto-applied: {title} @ {company}"
+        action_block = f"""\
+✅ The bot submitted your application automatically.
+No action needed from you.
+
+Method: {method}
+"""
+
+    body = f"""\
+{'='*50}
+{'⚠️  MANUAL ACTION NEEDED' if is_manual else '✅  AUTO-APPLIED — NO ACTION NEEDED'}
+{'='*50}
+
+{action_block}
+Position : {title}
+Company  : {company}
 Location : {job.get('location', 'Unknown')}
 Match    : {score:.0f}%
-Method   : {method}
-URL      : {job.get('url', '')}
+URL      : {url}
 
 ---
-Log in to check your applications:
-  python main.py status
-  python main.py jobs --status applied
+View all jobs: python main.py status
 """
+
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = notify_email
+        msg["To"] = notify_email
+        msg["Subject"] = subject
         msg.attach(MIMEText(body, "plain"))
 
         with smtplib.SMTP("smtp.gmail.com", 587) as server:
@@ -69,6 +92,47 @@ Log in to check your applications:
         print(f"    [Notify] Email sent to {notify_email}")
     except Exception as e:
         print(f"    [Notify] Could not send notification: {e}")
+
+
+def send_whatsapp(job: dict, method: str) -> None:
+    """Send a WhatsApp notification via CallMeBot (free, no account needed)."""
+    from secrets_manager import get_secret
+    phone   = get_secret("WHATSAPP_PHONE")    # e.g. +972523315195
+    api_key = get_secret("CALLMEBOT_API_KEY")
+
+    if not phone or not api_key:
+        return
+
+    is_manual = method in ("Added to manual queue", "Manual queue")
+    title   = job.get("title", "?")
+    company = job.get("company", "Unknown")
+    score   = job.get("match_score", 0)
+    url     = job.get("url", "")
+
+    if is_manual:
+        text = (
+            f"⚠️ ACTION REQUIRED\n"
+            f"{title} @ {company}\n"
+            f"Score: {score:.0f}% | Apply yourself:\n{url}"
+        )
+    else:
+        text = (
+            f"✅ AUTO-APPLIED\n"
+            f"{title} @ {company}\n"
+            f"Score: {score:.0f}% | Method: {method}\n{url}"
+        )
+
+    try:
+        import httpx
+        encoded = urllib.parse.quote(text)
+        httpx.get(
+            f"https://api.callmebot.com/whatsapp.php"
+            f"?phone={phone}&text={encoded}&apikey={api_key}",
+            timeout=10,
+        )
+        print(f"    [WhatsApp] Notification sent")
+    except Exception as e:
+        print(f"    [WhatsApp] Could not send: {e}")
 
 
 MANUAL_QUEUE_PATH = Path(__file__).parent / "manual_apply.csv"
@@ -89,19 +153,29 @@ def _find_email_in_text(text: str) -> Optional[str]:
 
 
 def _best_resume_path() -> Optional[Path]:
-    """Return the most recently modified resume file."""
-    candidates = [
-        Path.home() / "Desktop" / "Resume.docx-1.pdf",
-        Path.home() / "Downloads" / "Resume_LielCochabi.pdf",
-        Path.home() / "iCloudDrive" / "Resume.pdf",
+    """Return the most recently modified resume file found on Desktop/Downloads/Documents."""
+    found = []
+    search_dirs = [
+        Path.home() / "Desktop",
+        Path.home() / "Downloads",
+        Path.home() / "Documents",
+        Path.home() / "OneDrive" / "Desktop",
+        Path.home() / "OneDrive" / "Documents",
     ]
-    found = [p for p in candidates if p.exists()]
-    if not found:
-        # Fallback: scan Desktop/Downloads
-        for d in [Path.home() / "Desktop", Path.home() / "Downloads"]:
-            for p in d.glob("*.pdf"):
-                if "resume" in p.name.lower() or "cv" in p.name.lower():
-                    found.append(p)
+    # Also check for uploaded resume in the bot directory
+    bot_dir = Path(__file__).parent
+    for p in bot_dir.glob("uploaded_resume*"):
+        if p.suffix.lower() in (".pdf", ".docx"):
+            found.append(p)
+
+    for d in search_dirs:
+        if not d.exists():
+            continue
+        for p in d.glob("*"):
+            if p.suffix.lower() in (".pdf", ".docx") and (
+                "resume" in p.name.lower() or "cv" in p.name.lower()
+            ):
+                found.append(p)
     if not found:
         return None
     return max(found, key=lambda p: p.stat().st_mtime)
@@ -364,12 +438,17 @@ def submit_job(
     """
     url = job.get("url", "")
 
+    import tracker as _tracker
+
     # Method 1: LinkedIn Easy Apply
     if "linkedin.com" in url:
         success = apply_linkedin(job, profile, resume_path, auto)
         if success:
             database.set_applied(job["id"], "LinkedIn Easy Apply")
             send_notification(job, "LinkedIn Easy Apply")
+            send_whatsapp(job, "LinkedIn Easy Apply")
+            xlsx = _tracker.add_job(job, "LinkedIn Easy Apply")
+            print(f"    [Tracker] Logged to {xlsx.name}")
             return "applied"
 
     # Method 2: Email (if contact email found)
@@ -378,12 +457,18 @@ def submit_job(
         if success:
             database.set_applied(job["id"], "Email")
             send_notification(job, "Email")
+            send_whatsapp(job, "Email")
+            xlsx = _tracker.add_job(job, "Email")
+            print(f"    [Tracker] Logged to {xlsx.name}")
             return "applied"
 
     # Method 3: Manual queue
     queue_manual(job)
     database.set_applied(job["id"], "Manual queue")
     send_notification(job, "Added to manual queue")
+    send_whatsapp(job, "Added to manual queue")
+    xlsx = _tracker.add_job(job, "Manual queue")
+    print(f"    [Tracker] Logged to {xlsx.name}")
     return "queued"
 
 
