@@ -368,6 +368,8 @@ def stat_card(col, label: str, value, color: str, icon: str = ""):
 # ---------------------------------------------------------------------------
 
 database.init_db()
+# Auto-cleanup jobs older than 7 days (keeps applied jobs forever)
+database.cleanup_old_jobs(days=7)
 stats = database.get_stats()
 
 with st.sidebar:
@@ -403,7 +405,7 @@ if "Dashboard" in page:
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
     st.markdown("### ⚡ Quick Actions")
 
-    col1, col2, col3, col4, col5 = st.columns(5)
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
 
     if col1.button("🔍 Search Jobs",   use_container_width=True):
         launch_task([PYTHON, "-u", "main.py", "search"], "task_search")
@@ -413,7 +415,11 @@ if "Dashboard" in page:
         launch_task([PYTHON, "-u", "main.py", "run", "--auto"], "task_run")
     if col4.button("🔁 Re-score All",  use_container_width=True):
         launch_task([PYTHON, "-u", "main.py", "rematch"], "task_rematch")
-    if col5.button("🔄 Refresh Stats", use_container_width=True):
+    if col5.button("🔄 Refresh",       use_container_width=True):
+        st.rerun()
+    if col6.button("🗑️ Clean DB",      use_container_width=True):
+        deleted = database.cleanup_old_jobs(days=7)
+        st.toast(f"🗑️ Removed {deleted} jobs older than 7 days", icon="✅")
         st.rerun()
 
     # Show whichever task panel is active

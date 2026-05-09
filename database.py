@@ -118,6 +118,19 @@ def get_recent_jobs(hours: int = 24, limit: int = 200) -> list:
     return [dict(r) for r in rows]
 
 
+def cleanup_old_jobs(days: int = 7) -> int:
+    """Delete jobs older than N days, but keep applied ones forever.
+    Returns number of rows deleted."""
+    with get_conn() as conn:
+        cur = conn.execute(
+            """DELETE FROM jobs
+               WHERE found_at < datetime('now', ?)
+               AND status != 'applied'""",
+            (f"-{days} days",),
+        )
+        return cur.rowcount
+
+
 def get_unmatched_jobs() -> list:
     with get_conn() as conn:
         rows = conn.execute(
