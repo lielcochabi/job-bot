@@ -519,30 +519,54 @@ elif "Search" in page:
 
     render_task_panel("task_search", "Search Jobs")
 
-    # ── Results summary ──────────────────────────────────────────────────────
-    found   = database.get_jobs_by_status("found")
-    matched = database.get_jobs_by_status("matched")
-    total   = database.get_stats()["total"]
+    # ── Results ──────────────────────────────────────────────────────────────
+    found  = database.get_jobs_by_status("found")
+    stats  = database.get_stats()
 
-    if total > 0:
+    if stats["total"] > 0:
         st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
         m1, m2, m3 = st.columns(3)
-        m1.metric("Total in database", total)
-        m2.metric("Waiting to be scored", len(found))
-        m3.metric("Already matched", len(matched))
+        m1.metric("Total in database", stats["total"])
+        m2.metric("Unscored", len(found))
+        m3.metric("Matched", stats["matched"])
 
         if found:
-            st.info(f"✅ **{len(found)} new jobs found** — go to the **Dashboard** and click **Match Jobs** to score them, then check **Matched Jobs** to see results.")
+            st.markdown(f"### 📋 Found Jobs ({len(found)})")
+            st.caption("These jobs haven't been scored yet. Run **Match Jobs** from the Dashboard to filter by relevance.")
 
-            import pandas as pd
-            df = pd.DataFrame([{
-                "Title":    (j["title"]   or "")[:50],
-                "Company":  (j["company"] or "")[:25],
-                "Location": (j["location"] or "")[:20],
-                "Source":   j["source"],
-            } for j in found[:100]])
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            # Search/filter bar
+            search_filter = st.text_input("🔎 Filter by title or company", placeholder="e.g. Python, Berlin...", label_visibility="collapsed")
+
+            display = found
+            if search_filter:
+                fl = search_filter.lower()
+                display = [j for j in found if fl in (j.get("title") or "").lower() or fl in (j.get("company") or "").lower()]
+
+            for job in display[:100]:
+                title    = job.get("title")   or "Unknown"
+                company  = job.get("company") or "Unknown"
+                location = job.get("location") or ""
+                source   = job.get("source") or ""
+                url      = job.get("url") or ""
+                salary   = job.get("salary") or ""
+                desc     = (job.get("description") or "")[:250]
+
+                salary_html = f'<span style="color:#34d399;font-size:0.82rem">💰 {salary}</span>&nbsp;&nbsp;' if salary else ""
+
+                st.markdown(f"""
+                <div class="job-card">
+                    <div class="job-title">{title}</div>
+                    <div class="job-meta">🏢 {company}&nbsp;&nbsp;📍 {location}&nbsp;&nbsp;🔗 {source}</div>
+                    {salary_html}
+                    <div class="desc">{desc}{"..." if len(job.get("description") or "") > 250 else ""}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                btn_col, _ = st.columns([1, 6])
+                if url:
+                    btn_col.link_button("🌐 Open Job", url, use_container_width=True)
+                st.markdown("")
 
 
 # ---------------------------------------------------------------------------
