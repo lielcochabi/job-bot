@@ -1,14 +1,25 @@
 """SQLite database for tracking job applications."""
 import sqlite3
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-DB_PATH = Path(__file__).parent / "jobs.db"
+_DEFAULT_DB = Path(__file__).parent / "jobs.db"
+_local = threading.local()
+
+
+def set_db_path(path: Path):
+    """Set the database path for the current thread (per-user isolation)."""
+    _local.db_path = path
+
+
+def _db_path() -> Path:
+    return getattr(_local, "db_path", _DEFAULT_DB)
 
 
 def get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(_db_path())
     conn.row_factory = sqlite3.Row
     return conn
 

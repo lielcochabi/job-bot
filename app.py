@@ -22,6 +22,7 @@ load_dotenv(Path(__file__).parent / ".env", override=True)
 import secrets_manager
 secrets_manager.inject_all_into_env()
 
+import auth
 import database
 
 # ---------------------------------------------------------------------------
@@ -35,9 +36,8 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-PYTHON = str(Path(sys.executable))
+PYTHON  = str(Path(sys.executable))
 BOT_DIR = Path(__file__).parent
-CONFIG_PATH = BOT_DIR / "config.json"
 
 # ---------------------------------------------------------------------------
 # Global CSS
@@ -138,8 +138,142 @@ st.markdown("""
     #MainMenu { visibility: hidden; }
     footer    { visibility: hidden; }
     header    { visibility: hidden; }
+
+    /* ── Auth page ── */
+    .auth-card {
+        background: #1e293b; border: 1px solid #334155;
+        border-radius: 16px; padding: 36px 32px;
+        max-width: 420px; margin: 60px auto 0 auto;
+    }
+    .auth-title {
+        font-size: 2rem; font-weight: 800; color: #e2e8f0;
+        text-align: center; margin-bottom: 0.3rem;
+    }
+    .auth-sub {
+        font-size: 0.9rem; color: #64748b;
+        text-align: center; margin-bottom: 1.8rem;
+    }
 </style>
 """, unsafe_allow_html=True)
+
+
+# ---------------------------------------------------------------------------
+# Auth initialisation & cookie check
+# ---------------------------------------------------------------------------
+
+auth.init_auth_db()
+
+try:
+    from streamlit_cookies_controller import CookieController
+    _cookie = CookieController()
+    _cookie_available = True
+except Exception:
+    _cookie = None
+    _cookie_available = False
+
+
+def _do_login(username: str, remember: bool):
+    """Set session state and optionally a persistent cookie."""
+    token = auth.create_token(username, days=30 if remember else 1)
+    st.session_state["username"]   = username
+    st.session_state["auth_token"] = token
+    if remember and _cookie_available:
+        try:
+            _cookie.set("job_bot_auth", token, max_age=30 * 24 * 3600)
+        except Exception:
+            pass
+
+
+def _do_logout():
+    auth.revoke_token(st.session_state.get("auth_token", ""))
+    if _cookie_available:
+        try:
+            _cookie.remove("job_bot_auth")
+        except Exception:
+            pass
+    for k in ["username", "auth_token"]:
+        st.session_state.pop(k, None)
+
+
+# Auto-login from cookie (runs once per session)
+if "username" not in st.session_state and _cookie_available:
+    try:
+        token = _cookie.get("job_bot_auth")
+        if token:
+            uname = auth.validate_token(token)
+            if uname:
+                st.session_state["username"]   = uname
+                st.session_state["auth_token"] = token
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Auth page (shown when not logged in)
+# ---------------------------------------------------------------------------
+
+def show_auth_page():
+    _, mid, _ = st.columns([1, 1.4, 1])
+    with mid:
+        st.markdown('<div class="auth-title">🤖 Job Bot</div>', unsafe_allow_html=True)
+        st.markdown('<div class="auth-sub">Your automated job search assistant</div>', unsafe_allow_html=True)
+
+        tab_login, tab_signup = st.tabs(["🔑 Log In", "✨ Sign Up"])
+
+        with tab_login:
+            lu = st.text_input("Username", key="li_user", placeholder="your username")
+            lp = st.text_input("Password", type="password", key="li_pass", placeholder="••••••••")
+            rem = st.checkbox("Remember me for 30 days", value=True, key="li_rem")
+            st.markdown("")
+            if st.button("Log In", type="primary", use_container_width=True, key="li_btn"):
+                if lu and lp:
+                    ok, result = auth.login(lu, lp)
+                    if ok:
+                        _do_login(result, rem)
+                        st.rerun()
+                    else:
+                        st.error(result)
+                else:
+                    st.warning("Enter your username and password.")
+
+        with tab_signup:
+            su = st.text_input("Username",         key="su_user", placeholder="choose a username")
+            se = st.text_input("Email",            key="su_email", placeholder="you@example.com")
+            sp = st.text_input("Password",         type="password", key="su_pass", placeholder="min 6 characters")
+            sc = st.text_input("Confirm Password", type="password", key="su_conf", placeholder="repeat password")
+            st.markdown("")
+            if st.button("Create Account", type="primary", use_container_width=True, key="su_btn"):
+                if not (su and se and sp and sc):
+                    st.warning("Please fill in all fields.")
+                elif sp != sc:
+                    st.error("Passwords don't match.")
+                else:
+                    ok, msg = auth.register(su, se, sp)
+                    if ok:
+                        ok2, uname = auth.login(su, sp)
+                        if ok2:
+                            _do_login(uname, remember=True)
+                            st.success("Account created! Welcome 🎉")
+                            st.rerun()
+                    else:
+                        st.error(msg)
+
+
+if "username" not in st.session_state:
+    show_auth_page()
+    st.stop()
+
+
+# ---------------------------------------------------------------------------
+# Per-user context (runs for every logged-in page render)
+# ---------------------------------------------------------------------------
+
+_username  = st.session_state["username"]
+_user_dir  = auth.get_user_dir(_username)
+CONFIG_PATH = _user_dir / "config.json"
+
+# Point the database module at this user's DB
+database.set_db_path(_user_dir / "jobs.db")
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +306,7 @@ def launch_task(cmd: list, task_key: str):
         try:
             env = os.environ.copy()
             env["PYTHONUNBUFFERED"] = "1"
+            env["JOB_BOT_USER_DIR"] = str(_user_dir)
             with open(log_path, "w", encoding="utf-8", errors="replace") as f:
                 proc = subprocess.Popen(
                     cmd,
@@ -385,6 +520,11 @@ with st.sidebar:
     st.markdown(f"**Matched:** &nbsp;&nbsp;&nbsp;`{stats['matched']}`", unsafe_allow_html=True)
     st.markdown(f"**Applied:** &nbsp;&nbsp;&nbsp;`{stats['applied']}`", unsafe_allow_html=True)
     st.markdown(f"**Avg score:** &nbsp;`{stats['avg_score']}%`", unsafe_allow_html=True)
+    st.markdown("---")
+    st.markdown(f"👤 **{_username}**", unsafe_allow_html=True)
+    if st.button("🚪 Logout", use_container_width=True):
+        _do_logout()
+        st.rerun()
 
 
 # ---------------------------------------------------------------------------

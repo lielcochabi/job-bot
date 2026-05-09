@@ -40,7 +40,13 @@ import resume_parser
 app = typer.Typer(help="Automated job application bot — free, rule-based matching", add_completion=False)
 console = Console(force_terminal=True, highlight=False)
 
-CONFIG_PATH = Path(__file__).parent / "config.json"
+# Per-user data directory — injected by the UI via JOB_BOT_USER_DIR env var
+_USER_DIR = os.environ.get("JOB_BOT_USER_DIR")
+if _USER_DIR:
+    database.set_db_path(Path(_USER_DIR) / "jobs.db")
+    CONFIG_PATH = Path(_USER_DIR) / "config.json"
+else:
+    CONFIG_PATH = Path(__file__).parent / "config.json"
 
 
 def load_config() -> dict:

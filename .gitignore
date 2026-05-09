@@ -5,6 +5,7 @@
 # User data & runtime files
 *.db
 *.db-journal
+user_data/
 manual_apply.csv
 jobs_to_score.json
 trackers/
