@@ -3,6 +3,8 @@ Job Bot — Streamlit Web UI
 Run with: streamlit run app.py
 """
 import json
+import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -164,6 +166,8 @@ def launch_task(cmd: list, task_key: str):
 
     def _run():
         try:
+            env = os.environ.copy()
+            env["PYTHONUNBUFFERED"] = "1"  # force Python to flush output immediately
             with open(log_path, "w", encoding="utf-8", errors="replace") as f:
                 proc = subprocess.Popen(
                     cmd,
@@ -173,6 +177,7 @@ def launch_task(cmd: list, task_key: str):
                     encoding="utf-8",
                     errors="replace",
                     cwd=str(BOT_DIR),
+                    env=env,
                 )
                 proc.wait()
             status_path.write_text(json.dumps({"running": False, "returncode": proc.returncode}))
@@ -184,8 +189,13 @@ def launch_task(cmd: list, task_key: str):
     threading.Thread(target=_run, daemon=True).start()
 
 
+_ANSI_RE = re.compile(r'\x1b\[[0-9;]*[mGKHFABCDJn]|\r')
+
 def _colorize(line: str) -> str:
-    """Wrap a log line in a color span based on its content."""
+    """Strip ANSI codes then wrap the line in a color span based on content."""
+    line = _ANSI_RE.sub("", line).strip()
+    if not line:
+        return ""
     esc = line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     lo = line.lower()
     if any(k in lo for k in ("[match]", "✓", "complete", "success", "done", "applied")):
@@ -360,13 +370,13 @@ if "Dashboard" in page:
     col1, col2, col3, col4, col5 = st.columns(5)
 
     if col1.button("🔍 Search Jobs",   use_container_width=True):
-        launch_task([PYTHON, "main.py", "search"], "task_search")
+        launch_task([PYTHON, "-u", "main.py", "search"], "task_search")
     if col2.button("🎯 Match Jobs",    use_container_width=True):
-        launch_task([PYTHON, "main.py", "match"],  "task_match")
+        launch_task([PYTHON, "-u", "main.py", "match"],  "task_match")
     if col3.button("🚀 Full Pipeline", use_container_width=True, type="primary"):
-        launch_task([PYTHON, "main.py", "run", "--auto"], "task_run")
+        launch_task([PYTHON, "-u", "main.py", "run", "--auto"], "task_run")
     if col4.button("🔁 Re-score All",  use_container_width=True):
-        launch_task([PYTHON, "main.py", "rematch"], "task_rematch")
+        launch_task([PYTHON, "-u", "main.py", "rematch"], "task_rematch")
     if col5.button("🔄 Refresh Stats", use_container_width=True):
         st.rerun()
 
@@ -434,7 +444,7 @@ elif "Search" in page:
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
     if st.button("🔍  Start Search", type="primary"):
-        launch_task([PYTHON, "main.py", "search"], "task_search")
+        launch_task([PYTHON, "-u", "main.py", "search"], "task_search")
 
     render_task_panel("task_search", "Search Jobs")
 
