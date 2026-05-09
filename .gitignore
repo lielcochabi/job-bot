@@ -7,7 +7,6 @@
 *.db-journal
 manual_apply.csv
 jobs_to_score.json
-config.json
 trackers/
 uploaded_resume.*
 

@@ -145,13 +145,21 @@ st.markdown("""
 # ---------------------------------------------------------------------------
 
 def launch_task(cmd: list, task_key: str):
-    """Start a subprocess; stream output to a temp file, track state in session_state."""
-    log_path = Path(tempfile.mktemp(suffix=".log", prefix="jobbot_"))
+    """Start a subprocess in a background thread.
+    Output goes to a temp log file; status goes to a sidecar .status file.
+    The thread NEVER writes to st.session_state (not thread-safe in Streamlit).
+    """
+    log_path    = Path(tempfile.mktemp(suffix=".log",    prefix="jobbot_"))
+    status_path = Path(str(log_path) + ".status")
+
+    # Write initial status file
+    status_path.write_text(json.dumps({"running": True, "returncode": None}))
+
+    # Only store paths in session_state — set from main thread, never from bg thread
     st.session_state[task_key] = {
-        "running": True,
-        "log_file": str(log_path),
-        "returncode": None,
-        "visible": True,
+        "log_file":    str(log_path),
+        "status_file": str(status_path),
+        "visible":     True,
     }
 
     def _run():
@@ -167,13 +175,11 @@ def launch_task(cmd: list, task_key: str):
                     cwd=str(BOT_DIR),
                 )
                 proc.wait()
-            st.session_state[task_key]["running"] = False
-            st.session_state[task_key]["returncode"] = proc.returncode
+            status_path.write_text(json.dumps({"running": False, "returncode": proc.returncode}))
         except Exception as exc:
             with open(log_path, "a", encoding="utf-8") as f:
-                f.write(f"Launch error: {exc}\n")
-            st.session_state[task_key]["running"] = False
-            st.session_state[task_key]["returncode"] = 1
+                f.write(f"Error starting process: {exc}\n")
+            status_path.write_text(json.dumps({"running": False, "returncode": 1}))
 
     threading.Thread(target=_run, daemon=True).start()
 
@@ -206,10 +212,18 @@ def render_task_panel(task_key: str, title: str) -> bool:
     if not state or not state.get("visible", True):
         return False
 
-    running  = state["running"]
-    rc       = state["returncode"]
+    # Read running/returncode from sidecar status file (never from session_state)
+    status_path = Path(state.get("status_file", ""))
+    running, rc = True, None
+    if status_path.exists():
+        try:
+            s = json.loads(status_path.read_text())
+            running = s.get("running", True)
+            rc      = s.get("returncode")
+        except Exception:
+            pass
 
-    # Read output from temp file (thread-safe, no session_state write conflicts)
+    # Read log lines from log file
     log_path = Path(state.get("log_file", ""))
     lines: list[str] = []
     if log_path.exists():
