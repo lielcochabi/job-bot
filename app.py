@@ -146,6 +146,10 @@ st.markdown("""
 # Background task helpers
 # ---------------------------------------------------------------------------
 
+# Module-level process registry — safe to access from any thread
+_PROCS: dict[str, subprocess.Popen] = {}
+
+
 def launch_task(cmd: list, task_key: str):
     """Start a subprocess in a background thread.
     Output goes to a temp log file; status goes to a sidecar .status file.
@@ -167,7 +171,7 @@ def launch_task(cmd: list, task_key: str):
     def _run():
         try:
             env = os.environ.copy()
-            env["PYTHONUNBUFFERED"] = "1"  # force Python to flush output immediately
+            env["PYTHONUNBUFFERED"] = "1"
             with open(log_path, "w", encoding="utf-8", errors="replace") as f:
                 proc = subprocess.Popen(
                     cmd,
@@ -179,14 +183,29 @@ def launch_task(cmd: list, task_key: str):
                     cwd=str(BOT_DIR),
                     env=env,
                 )
+                _PROCS[task_key] = proc
                 proc.wait()
             status_path.write_text(json.dumps({"running": False, "returncode": proc.returncode}))
         except Exception as exc:
             with open(log_path, "a", encoding="utf-8") as f:
                 f.write(f"Error starting process: {exc}\n")
             status_path.write_text(json.dumps({"running": False, "returncode": 1}))
+        finally:
+            _PROCS.pop(task_key, None)
 
     threading.Thread(target=_run, daemon=True).start()
+
+
+def stop_task(task_key: str, status_path: Path):
+    """Kill the running process for task_key."""
+    proc = _PROCS.get(task_key)
+    if proc and proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=3)
+        except Exception:
+            proc.kill()
+    status_path.write_text(json.dumps({"running": False, "returncode": -1}))
 
 
 _ANSI_RE = re.compile(r'\x1b\[[0-9;]*[mGKHFABCDJn]|\r')
@@ -244,7 +263,11 @@ def render_task_panel(task_key: str, title: str) -> bool:
             pass
 
     # ── Header row ──────────────────────────────────────────────────────────
-    header_col, close_col = st.columns([11, 1])
+    if running:
+        header_col, stop_col, close_col = st.columns([9, 1.2, 1])
+    else:
+        header_col, close_col = st.columns([11, 1])
+
     with header_col:
         if running:
             st.markdown(
@@ -252,6 +275,13 @@ def render_task_panel(task_key: str, title: str) -> bool:
                 f'<i class="spinner-icon">⏳</i>'
                 f'<span style="color:#f59e0b;font-weight:700">{title}</span>'
                 f'<span style="color:#64748b;font-size:0.8rem"> &nbsp;— running, please wait…</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        elif rc == -1:
+            st.markdown(
+                f'<div class="task-panel-header error">'
+                f'<span style="color:#f59e0b;font-weight:700">⛔ {title} — Stopped</span>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
@@ -269,6 +299,12 @@ def render_task_panel(task_key: str, title: str) -> bool:
                 f'</div>',
                 unsafe_allow_html=True,
             )
+
+    if running:
+        with stop_col:
+            if st.button("⛔ Stop", key=f"stop_{task_key}", use_container_width=True):
+                stop_task(task_key, status_path)
+                st.rerun()
 
     with close_col:
         if st.button("✕ Close", key=f"close_{task_key}", use_container_width=True):
