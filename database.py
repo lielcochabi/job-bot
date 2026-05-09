@@ -14,8 +14,9 @@ _local = threading.local()
 def _get_db():
     global _client, _mongo_db
     if _mongo_db is None:
+        import certifi
         uri = os.environ.get("MONGODB_URI", "mongodb://localhost:27017")
-        _client = MongoClient(uri, serverSelectionTimeoutMS=5000)
+        _client = MongoClient(uri, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=5000)
         _mongo_db = _client["job_bot"]
     return _mongo_db
 
