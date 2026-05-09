@@ -277,12 +277,10 @@ if "username" not in st.session_state:
 # Per-user context (runs for every logged-in page render)
 # ---------------------------------------------------------------------------
 
-_username  = st.session_state["username"]
-_user_dir  = auth.get_user_dir(_username)
-CONFIG_PATH = _user_dir / "config.json"
+_username = st.session_state["username"]
 
-# Point the database module at this user's DB
-database.set_db_path(_user_dir / "jobs.db")
+# Point the database module at this user's data
+database.set_username(_username)
 
 
 # ---------------------------------------------------------------------------
@@ -315,7 +313,7 @@ def launch_task(cmd: list, task_key: str):
         try:
             env = os.environ.copy()
             env["PYTHONUNBUFFERED"] = "1"
-            env["JOB_BOT_USER_DIR"] = str(_user_dir)
+            env["JOB_BOT_USERNAME"] = _username
             with open(log_path, "w", encoding="utf-8", errors="replace") as f:
                 proc = subprocess.Popen(
                     cmd,
@@ -482,13 +480,11 @@ def render_task_panel(task_key: str, title: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def load_config() -> dict:
-    if CONFIG_PATH.exists():
-        return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-    return {}
+    return database.load_config()
 
 
 def save_config(cfg: dict):
-    CONFIG_PATH.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+    database.save_config(cfg)
 
 
 def score_color(score: float) -> str:

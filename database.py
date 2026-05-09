@@ -1,61 +1,53 @@
-"""SQLite database for tracking job applications."""
-import sqlite3
+"""MongoDB database for tracking job applications."""
+import os
 import threading
-from datetime import datetime
-from pathlib import Path
+from datetime import datetime, timedelta
 from typing import Optional
 
-_DEFAULT_DB = Path(__file__).parent / "jobs.db"
+from pymongo import MongoClient, ASCENDING, DESCENDING
+
+_client = None
+_mongo_db = None
 _local = threading.local()
 
 
-def set_db_path(path: Path):
-    """Set the database path for the current thread (per-user isolation)."""
-    _local.db_path = path
+def _get_db():
+    global _client, _mongo_db
+    if _mongo_db is None:
+        uri = os.environ.get("MONGODB_URI", "mongodb://localhost:27017")
+        _client = MongoClient(uri, serverSelectionTimeoutMS=5000)
+        _mongo_db = _client["job_bot"]
+    return _mongo_db
 
 
-def _db_path() -> Path:
-    return getattr(_local, "db_path", _DEFAULT_DB)
+def set_username(username: str):
+    """Set the username for the current thread (per-user isolation)."""
+    _local.username = username.lower()
 
 
-def get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(_db_path())
-    conn.row_factory = sqlite3.Row
-    return conn
+def set_db_path(path):
+    """No-op — kept for backward compatibility."""
+    pass
+
+
+def _uname() -> str:
+    return getattr(_local, "username", "default")
+
+
+def _doc(row) -> dict:
+    """Convert MongoDB document to plain dict with string 'id' field."""
+    d = dict(row)
+    d["id"] = str(d.pop("_id"))
+    return d
 
 
 def init_db() -> None:
-    with get_conn() as conn:
-        conn.executescript("""
-            CREATE TABLE IF NOT EXISTS jobs (
-                id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                source          TEXT NOT NULL,
-                external_id     TEXT,
-                title           TEXT NOT NULL,
-                company         TEXT,
-                url             TEXT UNIQUE,
-                location        TEXT,
-                salary          TEXT,
-                description     TEXT,
-                requirements    TEXT,
-                match_score     REAL,
-                match_reason    TEXT,
-                status          TEXT DEFAULT 'found',
-                found_at        TEXT DEFAULT (datetime('now')),
-                applied_at      TEXT,
-                notes           TEXT
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
-            CREATE INDEX IF NOT EXISTS idx_jobs_score  ON jobs(match_score);
-
-            CREATE TABLE IF NOT EXISTS resumes (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                path        TEXT UNIQUE NOT NULL,
-                content     TEXT,
-                parsed_at   TEXT DEFAULT (datetime('now'))
-            );
-        """)
+    db = _get_db()
+    db.jobs.create_index([("username", ASCENDING), ("url", ASCENDING)], unique=True, sparse=True)
+    db.jobs.create_index([("username", ASCENDING), ("status", ASCENDING)])
+    db.jobs.create_index([("username", ASCENDING), ("match_score", DESCENDING)])
+    db.resumes.create_index([("username", ASCENDING), ("path", ASCENDING)], unique=True)
+    db.configs.create_index("username", unique=True)
 
 
 def upsert_job(
@@ -67,144 +59,178 @@ def upsert_job(
     salary: str = "",
     description: str = "",
     external_id: str = "",
-) -> Optional[int]:
-    """Insert a job if it doesn't already exist. Returns row id or None if duplicate."""
-    with get_conn() as conn:
-        existing = conn.execute("SELECT id FROM jobs WHERE url = ?", (url,)).fetchone()
-        if existing:
-            return None
-        cur = conn.execute(
-            """INSERT INTO jobs (source, external_id, title, company, url, location,
-                                 salary, description)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (source, external_id, title, company, url, location, salary, description),
-        )
-        return cur.lastrowid
+) -> Optional[str]:
+    """Insert a job if it doesn't already exist. Returns id string or None if duplicate."""
+    if not url:
+        return None
+    db = _get_db()
+    username = _uname()
+    if db.jobs.find_one({"username": username, "url": url}):
+        return None
+    result = db.jobs.insert_one({
+        "username":     username,
+        "source":       source,
+        "external_id":  external_id,
+        "title":        title,
+        "company":      company,
+        "url":          url,
+        "location":     location,
+        "salary":       salary,
+        "description":  description,
+        "requirements": "",
+        "match_score":  None,
+        "match_reason": None,
+        "status":       "found",
+        "found_at":     datetime.utcnow().isoformat(),
+        "applied_at":   None,
+        "notes":        "",
+    })
+    return str(result.inserted_id)
 
 
-def set_match(job_id: int, score: float, reason: str) -> None:
+def set_match(job_id, score: float, reason: str) -> None:
+    from bson import ObjectId
+    db = _get_db()
     status = "matched" if score >= 70 else "skipped"
-    with get_conn() as conn:
-        conn.execute(
-            "UPDATE jobs SET match_score=?, match_reason=?, status=? WHERE id=?",
-            (score, reason, status, job_id),
-        )
+    db.jobs.update_one(
+        {"_id": ObjectId(job_id)},
+        {"$set": {"match_score": score, "match_reason": reason, "status": status}},
+    )
 
 
-def set_applied(job_id: int, notes: str = "") -> None:
-    with get_conn() as conn:
-        conn.execute(
-            "UPDATE jobs SET status='applied', applied_at=?, notes=? WHERE id=?",
-            (datetime.now().isoformat(), notes, job_id),
-        )
+def set_applied(job_id, notes: str = "") -> None:
+    from bson import ObjectId
+    db = _get_db()
+    db.jobs.update_one(
+        {"_id": ObjectId(job_id)},
+        {"$set": {"status": "applied", "applied_at": datetime.utcnow().isoformat(), "notes": notes}},
+    )
 
 
-def set_failed(job_id: int, reason: str = "") -> None:
-    with get_conn() as conn:
-        conn.execute(
-            "UPDATE jobs SET status='failed', notes=? WHERE id=?",
-            (reason, job_id),
-        )
+def set_failed(job_id, reason: str = "") -> None:
+    from bson import ObjectId
+    db = _get_db()
+    db.jobs.update_one(
+        {"_id": ObjectId(job_id)},
+        {"$set": {"status": "failed", "notes": reason}},
+    )
 
 
 def get_jobs_by_status(status: str) -> list:
-    with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM jobs WHERE status=? ORDER BY match_score DESC",
-            (status,),
-        ).fetchall()
-    return [dict(r) for r in rows]
+    db = _get_db()
+    rows = db.jobs.find(
+        {"username": _uname(), "status": status},
+        sort=[("match_score", DESCENDING)],
+    )
+    return [_doc(r) for r in rows]
 
 
 def get_recent_jobs(hours: int = 24, limit: int = 200) -> list:
-    """Return jobs added in the last N hours, newest first."""
-    with get_conn() as conn:
-        rows = conn.execute(
-            """SELECT * FROM jobs
-               WHERE found_at >= datetime('now', ?)
-               ORDER BY found_at DESC
-               LIMIT ?""",
-            (f"-{hours} hours", limit),
-        ).fetchall()
-    return [dict(r) for r in rows]
+    db = _get_db()
+    cutoff = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
+    rows = db.jobs.find(
+        {"username": _uname(), "found_at": {"$gte": cutoff}},
+        sort=[("found_at", DESCENDING)],
+        limit=limit,
+    )
+    return [_doc(r) for r in rows]
 
 
 def cleanup_old_jobs(days: int = 7) -> int:
-    """Delete jobs older than N days, but keep applied ones forever.
-    Returns number of rows deleted."""
-    with get_conn() as conn:
-        cur = conn.execute(
-            """DELETE FROM jobs
-               WHERE found_at < datetime('now', ?)
-               AND status != 'applied'""",
-            (f"-{days} days",),
-        )
-        return cur.rowcount
+    """Delete jobs older than N days, keeping applied ones forever."""
+    db = _get_db()
+    cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+    result = db.jobs.delete_many({
+        "username": _uname(),
+        "status":   {"$ne": "applied"},
+        "found_at": {"$lt": cutoff},
+    })
+    return result.deleted_count
+
+
+def expire_old_jobs(days: int = 30) -> int:
+    return cleanup_old_jobs(days)
 
 
 def get_unmatched_jobs() -> list:
-    with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM jobs WHERE match_score IS NULL ORDER BY id",
-        ).fetchall()
-    return [dict(r) for r in rows]
+    db = _get_db()
+    rows = db.jobs.find({"username": _uname(), "match_score": None})
+    return [_doc(r) for r in rows]
 
 
 def get_stats() -> dict:
-    with get_conn() as conn:
-        total   = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
-        found   = conn.execute("SELECT COUNT(*) FROM jobs WHERE status='found'").fetchone()[0]
-        matched = conn.execute("SELECT COUNT(*) FROM jobs WHERE status='matched'").fetchone()[0]
-        skipped = conn.execute("SELECT COUNT(*) FROM jobs WHERE status='skipped'").fetchone()[0]
-        applied = conn.execute("SELECT COUNT(*) FROM jobs WHERE status='applied'").fetchone()[0]
-        failed  = conn.execute("SELECT COUNT(*) FROM jobs WHERE status='failed'").fetchone()[0]
-        avg_score = conn.execute(
-            "SELECT AVG(match_score) FROM jobs WHERE match_score IS NOT NULL"
-        ).fetchone()[0]
+    db = _get_db()
+    username = _uname()
+    total   = db.jobs.count_documents({"username": username})
+    found   = db.jobs.count_documents({"username": username, "status": "found"})
+    matched = db.jobs.count_documents({"username": username, "status": "matched"})
+    skipped = db.jobs.count_documents({"username": username, "status": "skipped"})
+    applied = db.jobs.count_documents({"username": username, "status": "applied"})
+    failed  = db.jobs.count_documents({"username": username, "status": "failed"})
+
+    pipeline = [
+        {"$match": {"username": username, "match_score": {"$ne": None}}},
+        {"$group": {"_id": None, "avg": {"$avg": "$match_score"}}},
+    ]
+    avg_result = list(db.jobs.aggregate(pipeline))
+    avg_score = avg_result[0]["avg"] if avg_result else 0
+
     return {
-        "total": total,
-        "found": found,
+        "total":   total,
+        "found":   found,
         "matched": matched,
         "skipped": skipped,
         "applied": applied,
-        "failed": failed,
+        "failed":  failed,
         "avg_score": round(avg_score or 0, 1),
     }
 
 
-def expire_old_jobs(days: int = 30) -> int:
-    """Delete jobs older than `days` days that haven't been applied to. Returns count deleted."""
-    with get_conn() as conn:
-        cur = conn.execute(
-            """DELETE FROM jobs
-               WHERE status NOT IN ('applied')
-               AND found_at < datetime('now', ?)""",
-            (f"-{days} days",),
-        )
-        return cur.rowcount
-
-
 def reset_scores_for_rematch() -> int:
-    """Reset all non-applied jobs back to unscored so they can be re-matched. Returns count reset."""
-    with get_conn() as conn:
-        cur = conn.execute(
-            """UPDATE jobs
-               SET match_score = NULL, match_reason = NULL, status = 'found'
-               WHERE status NOT IN ('applied')"""
-        )
-        return cur.rowcount
+    db = _get_db()
+    result = db.jobs.update_many(
+        {"username": _uname(), "status": {"$ne": "applied"}},
+        {"$set": {"match_score": None, "match_reason": None, "status": "found"}},
+    )
+    return result.modified_count
 
 
 def save_resume(path: str, content: str) -> None:
-    with get_conn() as conn:
-        conn.execute(
-            "INSERT OR REPLACE INTO resumes (path, content, parsed_at) VALUES (?, ?, ?)",
-            (path, content, datetime.now().isoformat()),
-        )
+    db = _get_db()
+    db.resumes.update_one(
+        {"username": _uname(), "path": path},
+        {"$set": {"content": content, "parsed_at": datetime.utcnow().isoformat()}},
+        upsert=True,
+    )
 
 
 def get_resume_content() -> str:
-    """Return the combined text of all parsed resumes."""
-    with get_conn() as conn:
-        rows = conn.execute("SELECT content FROM resumes ORDER BY parsed_at DESC").fetchall()
-    return "\n\n---RESUME VERSION---\n\n".join(r[0] for r in rows if r[0])
+    db = _get_db()
+    rows = list(db.resumes.find(
+        {"username": _uname()},
+        sort=[("parsed_at", DESCENDING)],
+    ))
+    return "\n\n---RESUME VERSION---\n\n".join(r["content"] for r in rows if r.get("content"))
+
+
+def load_config() -> dict:
+    db = _get_db()
+    doc = db.configs.find_one({"username": _uname()})
+    if doc:
+        return doc.get("config", {})
+    # Fall back to root config.json for first-time users
+    from pathlib import Path
+    root_cfg = Path(__file__).parent / "config.json"
+    if root_cfg.exists():
+        import json
+        return json.loads(root_cfg.read_text(encoding="utf-8"))
+    return {}
+
+
+def save_config(cfg: dict) -> None:
+    db = _get_db()
+    db.configs.update_one(
+        {"username": _uname()},
+        {"$set": {"config": cfg}},
+        upsert=True,
+    )

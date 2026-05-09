@@ -14,7 +14,6 @@ from __future__ import annotations
 import json
 import os
 import sys
-from pathlib import Path
 
 # Force UTF-8 output on Windows (avoids cp1255 encoding errors)
 if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf-8-sig"):
@@ -41,19 +40,14 @@ import resume_parser
 app = typer.Typer(help="Automated job application bot — free, rule-based matching", add_completion=False)
 console = Console(force_terminal=True, highlight=False)
 
-# Per-user data directory — injected by the UI via JOB_BOT_USER_DIR env var
-_USER_DIR = os.environ.get("JOB_BOT_USER_DIR")
-if _USER_DIR:
-    database.set_db_path(Path(_USER_DIR) / "jobs.db")
-    CONFIG_PATH = Path(_USER_DIR) / "config.json"
-else:
-    CONFIG_PATH = Path(__file__).parent / "config.json"
+# Per-user context — injected by the UI via JOB_BOT_USERNAME env var
+_USERNAME = os.environ.get("JOB_BOT_USERNAME")
+if _USERNAME:
+    database.set_username(_USERNAME)
 
 
 def load_config() -> dict:
-    if CONFIG_PATH.exists():
-        return json.loads(CONFIG_PATH.read_text())
-    return {}
+    return database.load_config()
 
 
 # ---------------------------------------------------------------------------
@@ -368,8 +362,8 @@ def setup():
         },
     }
 
-    CONFIG_PATH.write_text(json.dumps(cfg, indent=2, ensure_ascii=False))
-    console.print(f"\n[green][OK][/green] Config saved to {CONFIG_PATH}")
+    database.save_config(cfg)
+    console.print(f"\n[green][OK][/green] Config saved to database")
     console.print("\nNext step: Run [bold]python main.py run[/bold] to start the full pipeline")
 
 
