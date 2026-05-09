@@ -213,18 +213,28 @@ if "username" not in st.session_state and _cookie_available:
 # ---------------------------------------------------------------------------
 
 def show_auth_page():
-    _, mid, _ = st.columns([1, 1.4, 1])
-    with mid:
-        st.markdown('<div class="auth-title">🤖 Job Bot</div>', unsafe_allow_html=True)
-        st.markdown('<div class="auth-sub">Your automated job search assistant</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div style="max-width:420px;margin:48px auto 0 auto;
+                background:#1e293b;border:1px solid #334155;
+                border-radius:16px;padding:36px 32px;">
+        <div style="font-size:2rem;font-weight:800;color:#e2e8f0;text-align:center;margin-bottom:0.3rem">
+            🤖 Job Bot
+        </div>
+        <div style="font-size:0.9rem;color:#64748b;text-align:center;margin-bottom:1.8rem">
+            Your automated job search assistant
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
+    # Centre the form using spacer columns
+    _, mid, _ = st.columns([1, 1.6, 1])
+    with mid:
         tab_login, tab_signup = st.tabs(["🔑 Log In", "✨ Sign Up"])
 
         with tab_login:
-            lu = st.text_input("Username", key="li_user", placeholder="your username")
-            lp = st.text_input("Password", type="password", key="li_pass", placeholder="••••••••")
+            lu  = st.text_input("Username", key="li_user", placeholder="your username")
+            lp  = st.text_input("Password", type="password", key="li_pass", placeholder="••••••••")
             rem = st.checkbox("Remember me for 30 days", value=True, key="li_rem")
-            st.markdown("")
             if st.button("Log In", type="primary", use_container_width=True, key="li_btn"):
                 if lu and lp:
                     ok, result = auth.login(lu, lp)
@@ -234,14 +244,13 @@ def show_auth_page():
                     else:
                         st.error(result)
                 else:
-                    st.warning("Enter your username and password.")
+                    st.warning("Please enter your username and password.")
 
         with tab_signup:
-            su = st.text_input("Username",         key="su_user", placeholder="choose a username")
+            su = st.text_input("Username",         key="su_user",  placeholder="choose a username")
             se = st.text_input("Email",            key="su_email", placeholder="you@example.com")
             sp = st.text_input("Password",         type="password", key="su_pass", placeholder="min 6 characters")
             sc = st.text_input("Confirm Password", type="password", key="su_conf", placeholder="repeat password")
-            st.markdown("")
             if st.button("Create Account", type="primary", use_container_width=True, key="su_btn"):
                 if not (su and se and sp and sc):
                     st.warning("Please fill in all fields.")
@@ -507,14 +516,31 @@ database.init_db()
 database.cleanup_old_jobs(days=7)
 stats = database.get_stats()
 
+_PAGES = ["🏠  Dashboard", "🔍  Search", "🎯  Matched Jobs", "🚀  Apply", "📊  Tracker", "⚙️  Settings"]
+
+def _go(page_fragment: str):
+    """Navigate to the page whose label contains page_fragment."""
+    for p in _PAGES:
+        if page_fragment in p:
+            st.session_state["nav_page"] = p
+            break
+    st.rerun()
+
+if "nav_page" not in st.session_state:
+    st.session_state["nav_page"] = _PAGES[0]
+
 with st.sidebar:
     st.markdown("## 🤖 Job Bot")
     st.markdown("---")
     page = st.radio(
         "nav",
-        ["🏠  Dashboard", "🔍  Search", "🎯  Matched Jobs", "🚀  Apply", "📊  Tracker", "⚙️  Settings"],
+        _PAGES,
+        index=_PAGES.index(st.session_state["nav_page"]),
         label_visibility="collapsed",
+        key="nav_radio",
     )
+    # Sync radio selection back to session state
+    st.session_state["nav_page"] = page
     st.markdown("---")
     st.markdown(f"**Total jobs:** &nbsp;`{stats['total']}`", unsafe_allow_html=True)
     st.markdown(f"**Matched:** &nbsp;&nbsp;&nbsp;`{stats['matched']}`", unsafe_allow_html=True)
@@ -543,21 +569,26 @@ if "Dashboard" in page:
     stat_card(c5, "Avg Score",    f"{stats['avg_score']}%", "#fb923c")
 
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
-    st.markdown("### ⚡ Quick Actions")
+    st.markdown("### 📂 Navigate")
+    nav1, nav2, nav3, nav4 = st.columns(4)
+    if nav1.button("🔍 Search Jobs",   use_container_width=True):
+        _go("Search")
+    if nav2.button("🎯 Matched Jobs",  use_container_width=True):
+        _go("Matched")
+    if nav3.button("🚀 Apply",         use_container_width=True):
+        _go("Apply")
+    if nav4.button("📊 Tracker",       use_container_width=True):
+        _go("Tracker")
 
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
-
-    if col1.button("🔍 Search Jobs",   use_container_width=True):
-        launch_task([PYTHON, "-u", "main.py", "search"], "task_search")
-    if col2.button("🎯 Match Jobs",    use_container_width=True):
-        launch_task([PYTHON, "-u", "main.py", "match"],  "task_match")
-    if col3.button("🚀 Full Pipeline", use_container_width=True, type="primary"):
+    st.markdown("### ⚡ Run Tasks")
+    col1, col2, col3, col4 = st.columns(4)
+    if col1.button("🚀 Full Pipeline", use_container_width=True, type="primary"):
         launch_task([PYTHON, "-u", "main.py", "run", "--auto"], "task_run")
-    if col4.button("🔁 Re-score All",  use_container_width=True):
+    if col2.button("🔁 Re-score All",  use_container_width=True):
         launch_task([PYTHON, "-u", "main.py", "rematch"], "task_rematch")
-    if col5.button("🔄 Refresh",       use_container_width=True):
+    if col3.button("🔄 Refresh",       use_container_width=True):
         st.rerun()
-    if col6.button("🗑️ Clean DB",      use_container_width=True):
+    if col4.button("🗑️ Clean DB",      use_container_width=True):
         deleted = database.cleanup_old_jobs(days=7)
         st.toast(f"🗑️ Removed {deleted} jobs older than 7 days", icon="✅")
         st.rerun()
