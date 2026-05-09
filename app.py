@@ -449,54 +449,100 @@ if "Dashboard" in page:
 
 elif "Search" in page:
     st.markdown('<div class="page-title">🔍 Search Jobs</div>', unsafe_allow_html=True)
-    st.markdown('<div class="page-sub">Search free job boards for new listings matching your profile.</div>', unsafe_allow_html=True)
+
+    # Flow explanation
+    st.markdown("""
+    <div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:14px 20px;margin-bottom:1.2rem;font-size:0.88rem;color:#94a3b8">
+    <b style="color:#e2e8f0">How it works:</b>&nbsp;
+    <span style="color:#60a5fa">① Search</span> saves raw jobs to the database →
+    <span style="color:#c084fc">② Match Jobs</span> scores them against your profile →
+    <span style="color:#34d399">③ Matched Jobs</span> shows the results ready to apply.
+    </div>
+    """, unsafe_allow_html=True)
 
     cfg = load_config()
-    queries = cfg.get("job_titles", [])
+    all_titles = cfg.get("job_titles", [])
 
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        st.markdown("**Active search queries:**")
-        tags_html = " ".join(f'<span class="skill-tag">{q}</span>' for q in queries)
-        st.markdown(tags_html, unsafe_allow_html=True)
-    with col2:
-        remote_only = st.checkbox("Remote only", value=cfg.get("remote_only", False))
+    # ── Job titles selector ──────────────────────────────────────────────────
+    st.markdown("#### 🏷️ Job Titles to Search")
+    selected_titles = st.multiselect(
+        "Pick which roles to search for (all selected by default)",
+        options=all_titles,
+        default=all_titles,
+        label_visibility="collapsed",
+    )
+
+    col_remote, _ = st.columns([1, 3])
+    with col_remote:
+        remote_only = st.checkbox("Remote jobs only", value=cfg.get("remote_only", False))
 
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
-    sources = [
-        "RemoteOK", "Arbeitnow", "The Muse", "HN Who's Hiring",
-        "Remotive", "Jobicy", "Working Nomads", "Himalayas", "Drushim 🇮🇱",
-    ]
+    # ── Source selector ──────────────────────────────────────────────────────
+    st.markdown("#### 🌐 Sites to Search")
+
+    SOURCE_MAP = {
+        "🟢 RemoteOK":       "remoteok",
+        "🔵 Arbeitnow":      "arbeitnow",
+        "🟣 The Muse":       "themuse",
+        "🟠 HN Who's Hiring":"hn",
+        "🔴 Remotive":       "remotive",
+        "🟡 Jobicy":         "jobicy",
+        "🌍 Working Nomads": "workingnomads",
+        "🏔️ Himalayas":      "himalayas",
+    }
+
     cols = st.columns(4)
-    for i, src in enumerate(sources):
-        cols[i % 4].markdown(
-            f'<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;'
-            f'padding:8px 12px;text-align:center;font-size:0.8rem;color:#94a3b8;margin-bottom:8px">'
-            f'✓ {src}</div>',
-            unsafe_allow_html=True,
-        )
+    selected_sources = {}
+    for i, (label, key) in enumerate(SOURCE_MAP.items()):
+        selected_sources[key] = cols[i % 4].checkbox(label, value=True, key=f"src_{key}")
+
+    enabled_sources = [k for k, v in selected_sources.items() if v]
 
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
-    if st.button("🔍  Start Search", type="primary"):
-        launch_task([PYTHON, "-u", "main.py", "search"], "task_search")
+    # ── Run button ───────────────────────────────────────────────────────────
+    can_search = bool(selected_titles and enabled_sources)
+    if not selected_titles:
+        st.warning("Select at least one job title to search.")
+    elif not enabled_sources:
+        st.warning("Select at least one site to search.")
+
+    if st.button("🔍  Start Search", type="primary", disabled=not can_search):
+        cmd = [PYTHON, "-u", "main.py", "search"]
+        for q in selected_titles:
+            cmd.extend(["-q", q])
+        cmd.extend(["--sources", ",".join(enabled_sources)])
+        if remote_only:
+            cmd.append("--remote")
+        launch_task(cmd, "task_search")
 
     render_task_panel("task_search", "Search Jobs")
 
-    found = database.get_jobs_by_status("found")
-    if found:
+    # ── Results summary ──────────────────────────────────────────────────────
+    found   = database.get_jobs_by_status("found")
+    matched = database.get_jobs_by_status("matched")
+    total   = database.get_stats()["total"]
+
+    if total > 0:
         st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
-        st.markdown(f"### Unscored Jobs ({len(found)})")
-        st.caption("These jobs were found but not yet matched. Run **Match Jobs** from the Dashboard.")
-        import pandas as pd
-        df = pd.DataFrame([{
-            "Title":    (j["title"]   or "")[:50],
-            "Company":  (j["company"] or "")[:25],
-            "Location": (j["location"] or "")[:20],
-            "Source":   j["source"],
-        } for j in found[:100]])
-        st.dataframe(df, use_container_width=True, hide_index=True)
+
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Total in database", total)
+        m2.metric("Waiting to be scored", len(found))
+        m3.metric("Already matched", len(matched))
+
+        if found:
+            st.info(f"✅ **{len(found)} new jobs found** — go to the **Dashboard** and click **Match Jobs** to score them, then check **Matched Jobs** to see results.")
+
+            import pandas as pd
+            df = pd.DataFrame([{
+                "Title":    (j["title"]   or "")[:50],
+                "Company":  (j["company"] or "")[:25],
+                "Location": (j["location"] or "")[:20],
+                "Source":   j["source"],
+            } for j in found[:100]])
+            st.dataframe(df, use_container_width=True, hide_index=True)
 
 
 # ---------------------------------------------------------------------------
