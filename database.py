@@ -105,6 +105,19 @@ def get_jobs_by_status(status: str) -> list:
     return [dict(r) for r in rows]
 
 
+def get_recent_jobs(hours: int = 24, limit: int = 200) -> list:
+    """Return jobs added in the last N hours, newest first."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT * FROM jobs
+               WHERE found_at >= datetime('now', ?)
+               ORDER BY found_at DESC
+               LIMIT ?""",
+            (f"-{hours} hours", limit),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def get_unmatched_jobs() -> list:
     with get_conn() as conn:
         rows = conn.execute(

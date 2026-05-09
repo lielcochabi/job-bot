@@ -517,10 +517,23 @@ elif "Search" in page:
             cmd.append("--remote")
         launch_task(cmd, "task_search")
 
-    render_task_panel("task_search", "Search Jobs")
+    task_still_running = render_task_panel("task_search", "Search Jobs")
+
+    # One final rerun after task finishes so results refresh immediately
+    if not task_still_running and st.session_state.get("task_search"):
+        state = st.session_state.get("task_search", {})
+        status_path = Path(state.get("status_file", ""))
+        if status_path.exists():
+            try:
+                s = json.loads(status_path.read_text())
+                if not s.get("running") and not st.session_state.get("search_result_shown"):
+                    st.session_state["search_result_shown"] = True
+                    st.rerun()
+            except Exception:
+                pass
 
     # ── Results ──────────────────────────────────────────────────────────────
-    found  = database.get_jobs_by_status("found")
+    recent = database.get_recent_jobs(hours=24)
     stats  = database.get_stats()
 
     if stats["total"] > 0:
@@ -528,22 +541,25 @@ elif "Search" in page:
 
         m1, m2, m3 = st.columns(3)
         m1.metric("Total in database", stats["total"])
-        m2.metric("Unscored", len(found))
+        m2.metric("Unscored", stats["found"])
         m3.metric("Matched", stats["matched"])
 
-        if found:
-            st.markdown(f"### 📋 Found Jobs ({len(found)})")
-            st.caption("These jobs haven't been scored yet. Run **Match Jobs** from the Dashboard to filter by relevance.")
+        if recent:
+            st.markdown(f"### 📋 Recently Found Jobs ({len(recent)})")
+            st.caption("Jobs found in the last 24 hours across all sources.")
 
-            # Search/filter bar
-            search_filter = st.text_input("🔎 Filter by title or company", placeholder="e.g. Python, Berlin...", label_visibility="collapsed")
+            search_filter = st.text_input(
+                "Filter", placeholder="🔎 Filter by title or company...",
+                label_visibility="collapsed"
+            )
 
-            display = found
+            display = recent
             if search_filter:
                 fl = search_filter.lower()
-                display = [j for j in found if fl in (j.get("title") or "").lower() or fl in (j.get("company") or "").lower()]
+                display = [j for j in recent if fl in (j.get("title") or "").lower()
+                           or fl in (j.get("company") or "").lower()]
 
-            for job in display[:100]:
+            for job in display[:150]:
                 title    = job.get("title")   or "Unknown"
                 company  = job.get("company") or "Unknown"
                 location = job.get("location") or ""
@@ -551,12 +567,20 @@ elif "Search" in page:
                 url      = job.get("url") or ""
                 salary   = job.get("salary") or ""
                 desc     = (job.get("description") or "")[:250]
+                status   = job.get("status") or "found"
 
                 salary_html = f'<span style="color:#34d399;font-size:0.82rem">💰 {salary}</span>&nbsp;&nbsp;' if salary else ""
 
+                status_badge = {
+                    "found":   ('<span style="background:#1e3a5f;color:#93c5fd;border-radius:6px;padding:2px 8px;font-size:0.75rem">Unscored</span>'),
+                    "matched": ('<span style="background:#14532d;color:#86efac;border-radius:6px;padding:2px 8px;font-size:0.75rem">✓ Matched</span>'),
+                    "skipped": ('<span style="background:#1e293b;color:#64748b;border-radius:6px;padding:2px 8px;font-size:0.75rem">Skipped</span>'),
+                    "applied": ('<span style="background:#312e81;color:#a5b4fc;border-radius:6px;padding:2px 8px;font-size:0.75rem">Applied</span>'),
+                }.get(status, "")
+
                 st.markdown(f"""
                 <div class="job-card">
-                    <div class="job-title">{title}</div>
+                    <div class="job-title">{title} &nbsp;{status_badge}</div>
                     <div class="job-meta">🏢 {company}&nbsp;&nbsp;📍 {location}&nbsp;&nbsp;🔗 {source}</div>
                     {salary_html}
                     <div class="desc">{desc}{"..." if len(job.get("description") or "") > 250 else ""}</div>
@@ -567,6 +591,8 @@ elif "Search" in page:
                 if url:
                     btn_col.link_button("🌐 Open Job", url, use_container_width=True)
                 st.markdown("")
+        else:
+            st.info("No jobs found in the last 24 hours. Run a search above to find new listings.")
 
 
 # ---------------------------------------------------------------------------
