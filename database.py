@@ -26,10 +26,6 @@ def set_username(username: str):
     _local.username = username.lower()
 
 
-def set_db_path(path):
-    """No-op — kept for backward compatibility."""
-    pass
-
 
 def _uname() -> str:
     return getattr(_local, "username", "default")

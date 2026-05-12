@@ -11,9 +11,9 @@ Usage:
 """
 from __future__ import annotations
 
-import json
 import os
 import sys
+from pathlib import Path
 
 # Force UTF-8 output on Windows (avoids cp1255 encoding errors)
 if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf-8-sig"):
