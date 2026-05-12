@@ -10,6 +10,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.parse
 from pathlib import Path
 
 import streamlit as st
@@ -195,6 +196,78 @@ def _do_logout():
         st.session_state.pop(k, None)
 
 
+# ---------------------------------------------------------------------------
+# Google OAuth helpers
+# ---------------------------------------------------------------------------
+
+def _google_oauth_url() -> str:
+    params = {
+        "client_id":     os.environ.get("GOOGLE_CLIENT_ID", ""),
+        "redirect_uri":  os.environ.get("APP_URL", "http://localhost:8501"),
+        "response_type": "code",
+        "scope":         "openid email profile",
+        "access_type":   "offline",
+        "prompt":        "select_account",
+    }
+    return "https://accounts.google.com/o/oauth2/auth?" + urllib.parse.urlencode(params)
+
+
+def _handle_google_callback() -> bool:
+    """If the URL has ?code=..., exchange it for user info and log in. Returns True if handled."""
+    code = st.query_params.get("code")
+    if not code:
+        return False
+
+    st.query_params.clear()
+
+    client_id     = os.environ.get("GOOGLE_CLIENT_ID", "")
+    client_secret = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+    redirect_uri  = os.environ.get("APP_URL", "http://localhost:8501")
+
+    try:
+        import httpx
+        token_resp = httpx.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "code":          code,
+                "client_id":     client_id,
+                "client_secret": client_secret,
+                "redirect_uri":  redirect_uri,
+                "grant_type":    "authorization_code",
+            },
+            timeout=10,
+        )
+        token_data   = token_resp.json()
+        access_token = token_data.get("access_token")
+        if not access_token:
+            st.error("Google login failed — no access token received.")
+            return True
+
+        user_resp = httpx.get(
+            "https://www.googleapis.com/oauth2/v2/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10,
+        )
+        info  = user_resp.json()
+        email = info.get("email", "")
+        name  = info.get("name", "")
+
+        if not email:
+            st.error("Could not retrieve your email from Google.")
+            return True
+
+        ok, result = auth.google_login(email, name)
+        if ok:
+            _do_login(result, remember=True)
+            st.rerun()
+        else:
+            st.error(f"Login failed: {result}")
+    except Exception as exc:
+        st.error(f"Google login error: {exc}")
+
+    return True
+
+
 # Auto-login from cookie (runs once per session)
 if "username" not in st.session_state and _cookie_available:
     try:
@@ -206,6 +279,10 @@ if "username" not in st.session_state and _cookie_available:
                 st.session_state["auth_token"] = token
     except Exception:
         pass
+
+# Handle Google OAuth redirect callback
+if "username" not in st.session_state:
+    _handle_google_callback()
 
 
 # ---------------------------------------------------------------------------
@@ -229,7 +306,19 @@ def show_auth_page():
     # Centre the form using spacer columns
     _, mid, _ = st.columns([1, 1.6, 1])
     with mid:
-        tab_login, tab_signup = st.tabs(["🔑 Log In", "✨ Sign Up"])
+        # Google sign-in (only shown if credentials are configured)
+        if os.environ.get("GOOGLE_CLIENT_ID"):
+            st.link_button(
+                "Sign in with Google",
+                _google_oauth_url(),
+                use_container_width=True,
+            )
+            st.markdown(
+                '<div style="text-align:center;color:#475569;font-size:0.8rem;margin:8px 0">or</div>',
+                unsafe_allow_html=True,
+            )
+
+        tab_login, tab_signup = st.tabs(["Log In", "Sign Up"])
 
         with tab_login:
             lu  = st.text_input("Username", key="li_user", placeholder="your username")

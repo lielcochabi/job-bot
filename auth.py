@@ -114,6 +114,42 @@ def revoke_token(token: str):
         _get_db().sessions.delete_one({"token": token})
 
 
+def google_login(email: str, name: str) -> tuple[bool, str]:
+    """Find or create a user from a Google OAuth login. Returns (ok, username)."""
+    import re as _re
+    email = email.strip().lower()
+    db = _get_db()
+
+    # Existing user with this email?
+    user = db.users.find_one({"email": email})
+    if user:
+        return True, user["username"]
+
+    # New user — derive a username from the email local part
+    base = _re.sub(r"[^a-z0-9]", "", email.split("@")[0].lower()) or "user"
+    if len(base) < 3:
+        base = base + "user"
+    username = base
+    counter = 1
+    while db.users.find_one({"username": username}):
+        username = f"{base}{counter}"
+        counter += 1
+
+    try:
+        db.users.insert_one({
+            "username":      username,
+            "email":         email,
+            "password_hash": "",        # no password for Google accounts
+            "display_name":  name,
+            "auth_provider": "google",
+            "created_at":    datetime.utcnow().isoformat(),
+        })
+        _seed_config(db, username)
+        return True, username
+    except Exception as e:
+        return False, str(e)
+
+
 def get_all_users() -> list[dict]:
     return [
         {"username": u["username"], "email": u["email"], "created_at": u.get("created_at", "")}
