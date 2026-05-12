@@ -262,7 +262,7 @@ def show_auth_page():
                         ok2, uname = auth.login(su, sp)
                         if ok2:
                             _do_login(uname, remember=True)
-                            st.success("Account created! Welcome 🎉")
+                            st.success("Account created! Welcome.")
                             st.rerun()
                     else:
                         st.error(msg)
@@ -275,7 +275,7 @@ def show_auth_page():
             '</div>',
             unsafe_allow_html=True,
         )
-        if st.button("👀 Continue as Guest", use_container_width=True, key="guest_btn"):
+        if st.button("Continue as Guest", use_container_width=True, key="guest_btn"):
             st.session_state["username"] = "__guest__"
             st.session_state["is_guest"] = True
             st.rerun()
@@ -305,7 +305,6 @@ def _guest_block():
     <div style="max-width:480px;margin:80px auto;background:#1e293b;
                 border:1px solid #6366f1;border-radius:16px;
                 padding:40px 32px;text-align:center;">
-        <div style="font-size:2.5rem;margin-bottom:12px">🔒</div>
         <div style="font-size:1.2rem;font-weight:700;color:#e2e8f0;margin-bottom:8px">
             Login Required
         </div>
@@ -316,7 +315,7 @@ def _guest_block():
     """, unsafe_allow_html=True)
     _, mid, _ = st.columns([1, 1.4, 1])
     with mid:
-        if st.button("🔑 Log In / Sign Up", type="primary", use_container_width=True, key="guest_login_redirect"):
+        if st.button("Log In / Sign Up", type="primary", use_container_width=True, key="guest_login_redirect"):
             st.session_state.pop("username", None)
             st.session_state.pop("is_guest", None)
             st.rerun()
@@ -584,8 +583,8 @@ with st.sidebar:
     st.markdown(f"**Avg score:** &nbsp;`{stats['avg_score']}%`", unsafe_allow_html=True)
     st.markdown("---")
     if _is_guest:
-        st.markdown("👀 **Guest**", unsafe_allow_html=True)
-        if st.button("🔑 Log In / Sign Up", use_container_width=True, type="primary"):
+        st.markdown("**Guest**", unsafe_allow_html=True)
+        if st.button("Log In / Sign Up", use_container_width=True, type="primary"):
             st.session_state.pop("username", None)
             st.session_state.pop("is_guest", None)
             st.rerun()
@@ -605,7 +604,7 @@ if "Dashboard" in page:
     st.markdown('<div class="page-sub">Your automated job application pipeline at a glance.</div>', unsafe_allow_html=True)
 
     if _is_guest:
-        st.info("👀 You're browsing as a guest. **Log in or sign up** to search jobs, run the pipeline, and track applications.", icon="ℹ️")
+        st.info("You're browsing as a guest. Log in or sign up to search jobs, run the pipeline, and track applications.")
 
     c1, c2, c3, c4, c5 = st.columns(5)
     stat_card(c1, "Total Found",  stats["total"],           "#60a5fa")
