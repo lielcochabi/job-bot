@@ -46,114 +46,147 @@ BOT_DIR = Path(__file__).parent
 
 st.markdown("""
 <style>
-    html, body, [class*="css"] { font-family: 'Inter', 'Segoe UI', sans-serif; }
-    .block-container { padding-top: 1.5rem !important; padding-bottom: 2rem !important; }
-
-    [data-testid="stSidebar"] { background: #0f172a; padding: 1.5rem 1rem; }
-    [data-testid="stSidebar"] * { color: #e2e8f0 !important; }
-    [data-testid="stSidebar"] hr { border-color: #334155; }
-
-    .stat-card {
-        background: linear-gradient(135deg, #1e293b, #0f172a);
-        border: 1px solid #334155; border-radius: 14px;
-        padding: 22px 16px; text-align: center;
-        width: 100%; box-sizing: border-box;
+    /* ── Base ── */
+    html, body, [class*="css"] {
+        font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
     }
-    .stat-card .value { font-size: 2.2rem; font-weight: 800; line-height: 1.1; }
-    .stat-card .label {
-        font-size: 0.78rem; letter-spacing: 0.05em; text-transform: uppercase;
-        margin-top: 6px; opacity: 0.7; color: #94a3b8;
+    .block-container {
+        padding-top: 2rem !important;
+        padding-bottom: 3rem !important;
+        max-width: 960px;
     }
 
+    /* ── Sidebar ── */
+    [data-testid="stSidebar"] {
+        background: #0d1117;
+        border-right: 1px solid #1e2636;
+        padding: 1.8rem 1.2rem;
+    }
+    [data-testid="stSidebar"] * { color: #c9d1d9 !important; }
+    [data-testid="stSidebar"] hr { border-color: #1e2636; margin: 1rem 0; }
+
+    /* ── Page header ── */
+    .page-title {
+        font-size: 1.4rem; font-weight: 600;
+        color: #e6edf3; margin-bottom: 0.25rem;
+        letter-spacing: -0.02em;
+    }
+    .page-sub {
+        font-size: 0.85rem; color: #5c6a82;
+        margin-bottom: 2rem;
+    }
+
+    /* ── Section label ── */
+    .section-label {
+        font-size: 0.7rem; font-weight: 600;
+        text-transform: uppercase; letter-spacing: 0.08em;
+        color: #3d4f6b; margin-bottom: 0.75rem;
+    }
+    .section-divider {
+        border: none; border-top: 1px solid #1e2636;
+        margin: 1.75rem 0;
+    }
+
+    /* ── Summary row (replaces stat cards) ── */
+    .summary-row {
+        display: flex; gap: 0; border: 1px solid #1e2636;
+        border-radius: 10px; overflow: hidden; margin-bottom: 2rem;
+    }
+    .summary-item {
+        flex: 1; padding: 16px 20px;
+        border-right: 1px solid #1e2636;
+    }
+    .summary-item:last-child { border-right: none; }
+    .summary-item .num {
+        font-size: 1.5rem; font-weight: 600; color: #e6edf3;
+        line-height: 1;
+    }
+    .summary-item .lbl {
+        font-size: 0.72rem; color: #5c6a82;
+        margin-top: 4px; text-transform: uppercase;
+        letter-spacing: 0.06em;
+    }
+
+    /* ── Job card ── */
     .job-card {
-        background: #1e293b; border: 1px solid #334155;
-        border-radius: 14px; padding: 20px 24px;
-        margin-bottom: 14px; width: 100%; box-sizing: border-box;
+        background: #0d1117;
+        border: 1px solid #1e2636;
+        border-radius: 10px;
+        padding: 18px 22px;
+        margin-bottom: 10px;
     }
-    .job-card:hover { border-color: #6366f1; }
+    .job-card:hover { border-color: #2d3f5c; }
     .job-card .job-title {
-        font-size: 1.05rem; font-weight: 700; color: #e2e8f0;
-        margin-bottom: 4px; white-space: normal; word-break: break-word;
+        font-size: 0.975rem; font-weight: 600;
+        color: #e6edf3; margin-bottom: 4px;
     }
-    .job-card .job-meta { font-size: 0.82rem; color: #94a3b8; margin-bottom: 10px; }
-    .job-card .score-badge {
-        display: inline-block; padding: 3px 12px;
-        border-radius: 99px; font-size: 0.8rem; font-weight: 700; margin-right: 8px;
+    .job-card .job-meta {
+        font-size: 0.8rem; color: #5c6a82; margin-bottom: 10px;
     }
-    .skill-tag {
-        display: inline-block; background: #1e3a5f; color: #93c5fd;
-        border-radius: 6px; padding: 2px 9px; font-size: 0.75rem; margin: 2px 2px 0 0;
+    .job-card .score-pill {
+        display: inline-block;
+        padding: 2px 10px; border-radius: 4px;
+        font-size: 0.75rem; font-weight: 600;
+        margin-right: 8px;
     }
     .job-card .desc {
-        font-size: 0.82rem; color: #94a3b8; margin-top: 10px;
-        line-height: 1.55; white-space: normal; word-break: break-word;
+        font-size: 0.8rem; color: #5c6a82;
+        line-height: 1.6; margin-top: 10px;
     }
-
-    .stButton > button {
-        border-radius: 10px !important; font-weight: 600 !important;
-        padding: 0.5rem 1.2rem !important; transition: all 0.2s !important;
-    }
-    .stButton > button:hover { transform: translateY(-1px); }
-
-    .page-title { font-size: 1.8rem; font-weight: 800; color: #e2e8f0; margin-bottom: 0.2rem; }
-    .page-sub { font-size: 0.9rem; color: #64748b; margin-bottom: 1.5rem; }
-    .section-divider { border: none; border-top: 1px solid #334155; margin: 1.5rem 0; }
-
-    /* ── Task Panel ── */
-    .task-panel {
-        background: #0f172a; border: 1px solid #334155;
-        border-radius: 12px; overflow: hidden; margin-top: 1rem;
-    }
-    .task-panel-header {
-        display: flex; align-items: center; gap: 10px;
-        padding: 12px 18px; border-bottom: 1px solid #1e293b;
-    }
-    .task-panel-header.running { border-left: 3px solid #f59e0b; }
-    .task-panel-header.done    { border-left: 3px solid #34d399; }
-    .task-panel-header.error   { border-left: 3px solid #f87171; }
-    .task-panel-body {
-        padding: 14px 18px; font-family: 'Courier New', monospace;
-        font-size: 0.8rem; max-height: 380px; overflow-y: auto;
-        line-height: 1.6;
-    }
-
-    @keyframes spin {
-        from { transform: rotate(0deg); }
-        to   { transform: rotate(360deg); }
-    }
-    .spinner-icon {
+    .skill-tag {
         display: inline-block;
-        animation: spin 1s linear infinite;
-        font-style: normal;
-    }
-    @keyframes blink {
-        0%, 100% { opacity: 1; }
-        50%       { opacity: 0.2; }
-    }
-    .dot-pulse {
-        display: inline-block; width: 8px; height: 8px;
-        background: #f59e0b; border-radius: 50%;
-        animation: blink 1.1s infinite; margin-right: 4px;
+        background: #161d2b; color: #5c6a82;
+        border: 1px solid #1e2636;
+        border-radius: 4px; padding: 1px 8px;
+        font-size: 0.72rem; margin: 2px 2px 0 0;
     }
 
-    #MainMenu { visibility: hidden; }
-    footer    { visibility: hidden; }
-    header    { visibility: hidden; }
+    /* ── Status badge ── */
+    .status-badge {
+        display: inline-block; padding: 2px 8px;
+        border-radius: 4px; font-size: 0.72rem; font-weight: 500;
+    }
 
-    /* ── Auth page ── */
-    .auth-card {
-        background: #1e293b; border: 1px solid #334155;
-        border-radius: 16px; padding: 36px 32px;
-        max-width: 420px; margin: 60px auto 0 auto;
+    /* ── Buttons ── */
+    .stButton > button {
+        border-radius: 7px !important;
+        font-weight: 500 !important;
+        font-size: 0.85rem !important;
+        padding: 0.4rem 1rem !important;
+        transition: opacity 0.15s !important;
     }
-    .auth-title {
-        font-size: 2rem; font-weight: 800; color: #e2e8f0;
-        text-align: center; margin-bottom: 0.3rem;
+    .stButton > button:hover { opacity: 0.85 !important; }
+
+    /* ── Task output panel ── */
+    .task-panel-header {
+        display: flex; align-items: center; gap: 8px;
+        padding: 10px 16px;
+        border-left: 2px solid transparent;
+        border-bottom: 1px solid #1e2636;
+        border-radius: 8px 8px 0 0;
+        background: #0d1117;
     }
-    .auth-sub {
-        font-size: 0.9rem; color: #64748b;
-        text-align: center; margin-bottom: 1.8rem;
+    .task-panel-header.running { border-left-color: #f59e0b; }
+    .task-panel-header.done    { border-left-color: #34d399; }
+    .task-panel-header.error   { border-left-color: #f87171; }
+    .task-panel-body {
+        padding: 12px 16px;
+        font-family: 'JetBrains Mono', 'Courier New', monospace;
+        font-size: 0.78rem; max-height: 340px; overflow-y: auto;
+        line-height: 1.65; background: #0d1117;
+        border: 1px solid #1e2636; border-top: none;
+        border-radius: 0 0 8px 8px;
     }
+
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+    .running-dot {
+        display: inline-block; width: 7px; height: 7px;
+        border-radius: 50%; background: #f59e0b;
+        animation: pulse 1.4s infinite; margin-right: 6px;
+    }
+
+    /* ── Hide Streamlit chrome ── */
+    #MainMenu, footer, header { visibility: hidden; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -294,11 +327,11 @@ def show_auth_page():
     <div style="max-width:420px;margin:48px auto 0 auto;
                 background:#1e293b;border:1px solid #334155;
                 border-radius:16px;padding:36px 32px;">
-        <div style="font-size:2rem;font-weight:800;color:#e2e8f0;text-align:center;margin-bottom:0.3rem">
-            🤖 Job Bot
+        <div style="font-size:1.5rem;font-weight:600;color:#e6edf3;text-align:center;margin-bottom:0.3rem;letter-spacing:-0.02em">
+            Job Bot
         </div>
-        <div style="font-size:0.9rem;color:#64748b;text-align:center;margin-bottom:1.8rem">
-            Your automated job search assistant
+        <div style="font-size:0.85rem;color:#5c6a82;text-align:center;margin-bottom:1.8rem">
+            Automated job search assistant
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -542,42 +575,42 @@ def render_task_panel(task_key: str, title: str) -> bool:
         if running:
             st.markdown(
                 f'<div class="task-panel-header running">'
-                f'<i class="spinner-icon">⏳</i>'
-                f'<span style="color:#f59e0b;font-weight:700">{title}</span>'
-                f'<span style="color:#64748b;font-size:0.8rem"> &nbsp;— running, please wait…</span>'
+                f'<span class="running-dot"></span>'
+                f'<span style="color:#e6edf3;font-size:0.85rem;font-weight:500">{title}</span>'
+                f'<span style="color:#3d4f6b;font-size:0.78rem"> — running</span>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
         elif rc == -1:
             st.markdown(
                 f'<div class="task-panel-header error">'
-                f'<span style="color:#f59e0b;font-weight:700">⛔ {title} — Stopped</span>'
+                f'<span style="color:#f59e0b;font-size:0.85rem;font-weight:500">{title} — stopped</span>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
         elif rc == 0:
             st.markdown(
                 f'<div class="task-panel-header done">'
-                f'<span style="color:#34d399;font-weight:700">✅ {title} — Completed!</span>'
+                f'<span style="color:#34d399;font-size:0.85rem;font-weight:500">{title} — done</span>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
         else:
             st.markdown(
                 f'<div class="task-panel-header error">'
-                f'<span style="color:#f87171;font-weight:700">❌ {title} — Failed (exit {rc})</span>'
+                f'<span style="color:#f87171;font-size:0.85rem;font-weight:500">{title} — failed (exit {rc})</span>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
 
     if running:
         with stop_col:
-            if st.button("⛔ Stop", key=f"stop_{task_key}", use_container_width=True):
+            if st.button("Stop", key=f"stop_{task_key}", use_container_width=True):
                 stop_task(task_key, status_path)
                 st.rerun()
 
     with close_col:
-        if st.button("✕ Close", key=f"close_{task_key}", use_container_width=True):
+        if st.button("Close", key=f"close_{task_key}", use_container_width=True):
             st.session_state[task_key]["visible"] = False
             st.rerun()
 
@@ -616,19 +649,9 @@ def save_config(cfg: dict):
 
 
 def score_color(score: float) -> str:
-    if score >= 85: return "#22c55e"
-    if score >= 75: return "#f59e0b"
-    return "#6366f1"
-
-
-def stat_card(col, label: str, value, color: str, icon: str = ""):
-    col.markdown(
-        f'<div class="stat-card">'
-        f'<div class="value" style="color:{color}">{icon} {value}</div>'
-        f'<div class="label">{label}</div>'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
+    if score >= 85: return "#34d399"
+    if score >= 70: return "#60a5fa"
+    return "#5c6a82"
 
 
 # ---------------------------------------------------------------------------
@@ -640,10 +663,9 @@ database.init_db()
 database.cleanup_old_jobs(days=7)
 stats = database.get_stats()
 
-_PAGES = ["🏠  Dashboard", "🔍  Search", "🎯  Matched Jobs", "🚀  Apply", "📊  Tracker", "⚙️  Settings"]
+_PAGES = ["Dashboard", "Search", "Matched Jobs", "Apply", "Tracker", "Settings"]
 
 def _go(page_fragment: str):
-    """Navigate to the page whose label contains page_fragment."""
     for p in _PAGES:
         if page_fragment in p:
             st.session_state["nav_page"] = p
@@ -654,8 +676,10 @@ if "nav_page" not in st.session_state:
     st.session_state["nav_page"] = _PAGES[0]
 
 with st.sidebar:
-    st.markdown("## 🤖 Job Bot")
-    st.markdown("---")
+    st.markdown(
+        '<div style="font-size:1rem;font-weight:600;color:#e6edf3;margin-bottom:1.5rem;letter-spacing:-0.01em">Job Bot</div>',
+        unsafe_allow_html=True,
+    )
     page = st.radio(
         "nav",
         _PAGES,
@@ -663,23 +687,25 @@ with st.sidebar:
         label_visibility="collapsed",
         key="nav_radio",
     )
-    # Sync radio selection back to session state
     st.session_state["nav_page"] = page
     st.markdown("---")
-    st.markdown(f"**Total jobs:** &nbsp;`{stats['total']}`", unsafe_allow_html=True)
-    st.markdown(f"**Matched:** &nbsp;&nbsp;&nbsp;`{stats['matched']}`", unsafe_allow_html=True)
-    st.markdown(f"**Applied:** &nbsp;&nbsp;&nbsp;`{stats['applied']}`", unsafe_allow_html=True)
-    st.markdown(f"**Avg score:** &nbsp;`{stats['avg_score']}%`", unsafe_allow_html=True)
+    st.markdown(
+        f'<div style="font-size:0.78rem;color:#3d4f6b;line-height:2">'
+        f'{stats["total"]} jobs found &nbsp;·&nbsp; {stats["matched"]} matched<br>'
+        f'{stats["applied"]} applied &nbsp;·&nbsp; avg {stats["avg_score"]}%'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
     st.markdown("---")
     if _is_guest:
-        st.markdown("**Guest**", unsafe_allow_html=True)
-        if st.button("Log In / Sign Up", use_container_width=True, type="primary"):
+        st.markdown('<div style="font-size:0.8rem;color:#5c6a82;margin-bottom:8px">Browsing as guest</div>', unsafe_allow_html=True)
+        if st.button("Log in", use_container_width=True, type="primary"):
             st.session_state.pop("username", None)
             st.session_state.pop("is_guest", None)
             st.rerun()
     else:
-        st.markdown(f"👤 **{_username}**", unsafe_allow_html=True)
-        if st.button("🚪 Logout", use_container_width=True):
+        st.markdown(f'<div style="font-size:0.8rem;color:#5c6a82;margin-bottom:8px">{_username}</div>', unsafe_allow_html=True)
+        if st.button("Log out", use_container_width=True):
             _do_logout()
             st.rerun()
 
@@ -689,51 +715,53 @@ with st.sidebar:
 # ---------------------------------------------------------------------------
 
 if "Dashboard" in page:
-    st.markdown('<div class="page-title">🏠 Dashboard</div>', unsafe_allow_html=True)
-    st.markdown('<div class="page-sub">Your automated job application pipeline at a glance.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-title">Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-sub">Overview of your job search pipeline.</div>', unsafe_allow_html=True)
 
     if _is_guest:
-        st.info("You're browsing as a guest. Log in or sign up to search jobs, run the pipeline, and track applications.")
+        st.info("You're browsing as a guest. Log in to search jobs, run the pipeline, and track applications.")
 
-    c1, c2, c3, c4, c5 = st.columns(5)
-    stat_card(c1, "Total Found",  stats["total"],           "#60a5fa")
-    stat_card(c2, "Matched ≥70%", stats["matched"],         "#34d399")
-    stat_card(c3, "Applied",      stats["applied"],         "#a78bfa")
-    stat_card(c4, "Skipped",      stats["skipped"],         "#94a3b8")
-    stat_card(c5, "Avg Score",    f"{stats['avg_score']}%", "#fb923c")
+    # Summary row
+    st.markdown(f"""
+    <div class="summary-row">
+        <div class="summary-item"><div class="num">{stats["total"]}</div><div class="lbl">Found</div></div>
+        <div class="summary-item"><div class="num">{stats["matched"]}</div><div class="lbl">Matched</div></div>
+        <div class="summary-item"><div class="num">{stats["applied"]}</div><div class="lbl">Applied</div></div>
+        <div class="summary-item"><div class="num">{stats["skipped"]}</div><div class="lbl">Skipped</div></div>
+        <div class="summary-item"><div class="num">{stats["avg_score"]}%</div><div class="lbl">Avg score</div></div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Navigation
+    st.markdown('<div class="section-label">Go to</div>', unsafe_allow_html=True)
+    nav1, nav2, nav3, nav4 = st.columns(4)
+    if nav1.button("Search",       use_container_width=True): _go("Search")
+    if nav2.button("Matched Jobs", use_container_width=True): _go("Matched")
+    if nav3.button("Apply",        use_container_width=True): _go("Apply")
+    if nav4.button("Tracker",      use_container_width=True): _go("Tracker")
 
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
-    st.markdown("### 📂 Navigate")
-    nav1, nav2, nav3, nav4 = st.columns(4)
-    if nav1.button("🔍 Search Jobs",   use_container_width=True):
-        _go("Search")
-    if nav2.button("🎯 Matched Jobs",  use_container_width=True):
-        _go("Matched")
-    if nav3.button("🚀 Apply",         use_container_width=True):
-        _go("Apply")
-    if nav4.button("📊 Tracker",       use_container_width=True):
-        _go("Tracker")
 
-    st.markdown("### ⚡ Run Tasks")
+    # Actions
+    st.markdown('<div class="section-label">Actions</div>', unsafe_allow_html=True)
     col1, col2, col3, col4 = st.columns(4)
-    if col1.button("🚀 Full Pipeline", use_container_width=True, type="primary"):
+    if col1.button("Run full pipeline", use_container_width=True, type="primary"):
         launch_task([PYTHON, "-u", "main.py", "run", "--auto"], "task_run")
-    if col2.button("🔁 Re-score All",  use_container_width=True):
+    if col2.button("Re-score all",      use_container_width=True):
         launch_task([PYTHON, "-u", "main.py", "rematch"], "task_rematch")
-    if col3.button("🔄 Refresh",       use_container_width=True):
+    if col3.button("Refresh",           use_container_width=True):
         st.rerun()
-    if col4.button("🗑️ Clean DB",      use_container_width=True):
+    if col4.button("Clean old jobs",    use_container_width=True):
         deleted = database.cleanup_old_jobs(days=7)
-        st.toast(f"🗑️ Removed {deleted} jobs older than 7 days", icon="✅")
+        st.toast(f"Removed {deleted} jobs older than 7 days.")
         st.rerun()
 
-    # Show whichever task panel is active
-    for key, label in [("task_run", "Full Pipeline"), ("task_search", "Search Jobs"), ("task_match", "Match Jobs"), ("task_rematch", "Re-score All")]:
+    for key, label in [("task_run", "Full Pipeline"), ("task_search", "Search"), ("task_match", "Match"), ("task_rematch", "Re-score")]:
         render_task_panel(key, label)
 
-    # Recent matches preview
+    # Recent matches
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
-    st.markdown("### 🎯 Recent Matches")
+    st.markdown('<div class="section-label">Recent matches</div>', unsafe_allow_html=True)
 
     matched = database.get_jobs_by_status("matched")[:5]
     if matched:
@@ -743,15 +771,19 @@ if "Dashboard" in page:
             company = (job.get("company") or "Unknown")[:30]
             url     = job.get("url") or ""
             col1, col2, col3 = st.columns([5, 1, 1])
-            col1.markdown(f"**{title}** &nbsp;·&nbsp; *{company}*", unsafe_allow_html=True)
+            col1.markdown(
+                f'<div style="font-size:0.875rem;color:#e6edf3">{title}</div>'
+                f'<div style="font-size:0.78rem;color:#5c6a82">{company}</div>',
+                unsafe_allow_html=True,
+            )
             col2.markdown(
-                f'<span style="color:{score_color(score)};font-weight:700">{score:.0f}%</span>',
+                f'<div style="font-size:0.875rem;color:{score_color(score)};padding-top:4px">{score:.0f}%</div>',
                 unsafe_allow_html=True,
             )
             if url:
-                col3.link_button("Open →", url, use_container_width=True)
+                col3.link_button("Open", url, use_container_width=True)
     else:
-        st.info("No matched jobs yet. Run **Search** then **Match**.")
+        st.markdown('<div style="font-size:0.85rem;color:#3d4f6b">No matched jobs yet. Run a search to get started.</div>', unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------
@@ -760,48 +792,34 @@ if "Dashboard" in page:
 
 elif "Search" in page:
     _guest_block()
-    st.markdown('<div class="page-title">🔍 Search Jobs</div>', unsafe_allow_html=True)
-
-    # Flow explanation
-    st.markdown("""
-    <div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:14px 20px;margin-bottom:1.2rem;font-size:0.88rem;color:#94a3b8">
-    <b style="color:#e2e8f0">How it works:</b>&nbsp;
-    <span style="color:#60a5fa">① Search</span> saves raw jobs to the database →
-    <span style="color:#c084fc">② Match Jobs</span> scores them against your profile →
-    <span style="color:#34d399">③ Matched Jobs</span> shows the results ready to apply.
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown('<div class="page-title">Search</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-sub">Search → Match → Apply. Each step is separate.</div>', unsafe_allow_html=True)
 
     cfg = load_config()
     all_titles = cfg.get("job_titles", [])
 
-    # ── Job titles selector ──────────────────────────────────────────────────
-    st.markdown("#### 🏷️ Job Titles to Search")
+    st.markdown('<div class="section-label">Job titles</div>', unsafe_allow_html=True)
     selected_titles = st.multiselect(
-        "Pick which roles to search for (all selected by default)",
+        "titles",
         options=all_titles,
         default=all_titles,
         label_visibility="collapsed",
     )
 
-    col_remote, _ = st.columns([1, 3])
-    with col_remote:
-        remote_only = st.checkbox("Remote jobs only", value=cfg.get("remote_only", False))
+    remote_only = st.checkbox("Remote only", value=cfg.get("remote_only", False))
 
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
-
-    # ── Source selector ──────────────────────────────────────────────────────
-    st.markdown("#### 🌐 Sites to Search")
+    st.markdown('<div class="section-label">Sources</div>', unsafe_allow_html=True)
 
     SOURCE_MAP = {
-        "🟢 RemoteOK":       "remoteok",
-        "🔵 Arbeitnow":      "arbeitnow",
-        "🟣 The Muse":       "themuse",
-        "🟠 HN Who's Hiring":"hn",
-        "🔴 Remotive":       "remotive",
-        "🟡 Jobicy":         "jobicy",
-        "🌍 Working Nomads": "workingnomads",
-        "🏔️ Himalayas":      "himalayas",
+        "RemoteOK":        "remoteok",
+        "Arbeitnow":       "arbeitnow",
+        "The Muse":        "themuse",
+        "HN Who's Hiring": "hn",
+        "Remotive":        "remotive",
+        "Jobicy":          "jobicy",
+        "Working Nomads":  "workingnomads",
+        "Himalayas":       "himalayas",
     }
 
     cols = st.columns(4)
@@ -813,14 +831,13 @@ elif "Search" in page:
 
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
-    # ── Run button ───────────────────────────────────────────────────────────
     can_search = bool(selected_titles and enabled_sources)
     if not selected_titles:
-        st.warning("Select at least one job title to search.")
+        st.warning("Select at least one job title.")
     elif not enabled_sources:
-        st.warning("Select at least one site to search.")
+        st.warning("Select at least one source.")
 
-    if st.button("🔍  Start Search", type="primary", disabled=not can_search):
+    if st.button("Start search", type="primary", disabled=not can_search):
         cmd = [PYTHON, "-u", "main.py", "search"]
         for q in selected_titles:
             cmd.extend(["-q", q])
@@ -829,9 +846,8 @@ elif "Search" in page:
             cmd.append("--remote")
         launch_task(cmd, "task_search")
 
-    task_still_running = render_task_panel("task_search", "Search Jobs")
+    task_still_running = render_task_panel("task_search", "Search")
 
-    # One final rerun after task finishes so results refresh immediately
     if not task_still_running and st.session_state.get("task_search"):
         state = st.session_state.get("task_search", {})
         status_path = Path(state.get("status_file", ""))
@@ -844,26 +860,22 @@ elif "Search" in page:
             except Exception:
                 pass
 
-    # ── Results ──────────────────────────────────────────────────────────────
     recent = database.get_recent_jobs(hours=24)
     stats  = database.get_stats()
 
     if stats["total"] > 0:
         st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
-
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Total in database", stats["total"])
-        m2.metric("Unscored", stats["found"])
-        m3.metric("Matched", stats["matched"])
+        st.markdown(
+            f'<div style="font-size:0.78rem;color:#3d4f6b;margin-bottom:1rem">'
+            f'{stats["total"]} total &nbsp;·&nbsp; {stats["found"]} unscored &nbsp;·&nbsp; {stats["matched"]} matched'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
         if recent:
-            st.markdown(f"### 📋 Recently Found Jobs ({len(recent)})")
-            st.caption("Jobs found in the last 24 hours across all sources.")
+            st.markdown(f'<div class="section-label">Found in last 24h — {len(recent)} jobs</div>', unsafe_allow_html=True)
 
-            search_filter = st.text_input(
-                "Filter", placeholder="🔎 Filter by title or company...",
-                label_visibility="collapsed"
-            )
+            search_filter = st.text_input("Filter", placeholder="Filter by title or company...", label_visibility="collapsed")
 
             display = recent
             if search_filter:
@@ -881,30 +893,33 @@ elif "Search" in page:
                 desc     = (job.get("description") or "")[:250]
                 status   = job.get("status") or "found"
 
-                salary_html = f'<span style="color:#34d399;font-size:0.82rem">💰 {salary}</span>&nbsp;&nbsp;' if salary else ""
+                meta_parts = [p for p in [company, location, source] if p]
+                salary_str = f' · {salary}' if salary else ""
 
-                status_badge = {
-                    "found":   ('<span style="background:#1e3a5f;color:#93c5fd;border-radius:6px;padding:2px 8px;font-size:0.75rem">Unscored</span>'),
-                    "matched": ('<span style="background:#14532d;color:#86efac;border-radius:6px;padding:2px 8px;font-size:0.75rem">✓ Matched</span>'),
-                    "skipped": ('<span style="background:#1e293b;color:#64748b;border-radius:6px;padding:2px 8px;font-size:0.75rem">Skipped</span>'),
-                    "applied": ('<span style="background:#312e81;color:#a5b4fc;border-radius:6px;padding:2px 8px;font-size:0.75rem">Applied</span>'),
-                }.get(status, "")
+                status_colors = {
+                    "found":   ("background:#161d2b;color:#5c6a82", "Unscored"),
+                    "matched": ("background:#0d2218;color:#34d399",  "Matched"),
+                    "skipped": ("background:#161d2b;color:#3d4f6b",  "Skipped"),
+                    "applied": ("background:#0d1829;color:#60a5fa",  "Applied"),
+                }
+                sc_style, sc_label = status_colors.get(status, ("background:#161d2b;color:#5c6a82", status))
 
                 st.markdown(f"""
                 <div class="job-card">
-                    <div class="job-title">{title} &nbsp;{status_badge}</div>
-                    <div class="job-meta">🏢 {company}&nbsp;&nbsp;📍 {location}&nbsp;&nbsp;🔗 {source}</div>
-                    {salary_html}
-                    <div class="desc">{desc}{"..." if len(job.get("description") or "") > 250 else ""}</div>
+                    <div style="display:flex;align-items:flex-start;justify-content:space-between">
+                        <div class="job-title">{title}</div>
+                        <span class="status-badge" style="{sc_style}">{sc_label}</span>
+                    </div>
+                    <div class="job-meta">{' · '.join(meta_parts)}{salary_str}</div>
+                    <div class="desc">{desc}{"…" if len(job.get("description") or "") > 250 else ""}</div>
                 </div>
                 """, unsafe_allow_html=True)
 
-                btn_col, _ = st.columns([1, 6])
                 if url:
-                    btn_col.link_button("🌐 Open Job", url, use_container_width=True)
-                st.markdown("")
+                    btn_col, _ = st.columns([1, 7])
+                    btn_col.link_button("Open", url, use_container_width=True)
         else:
-            st.info("No jobs found in the last 24 hours. Run a search above to find new listings.")
+            st.markdown('<div style="font-size:0.85rem;color:#3d4f6b">No jobs found in the last 24 hours.</div>', unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------
@@ -913,20 +928,19 @@ elif "Search" in page:
 
 elif "Matched" in page:
     _guest_block()
-    st.markdown('<div class="page-title">🎯 Matched Jobs</div>', unsafe_allow_html=True)
-    st.markdown('<div class="page-sub">Jobs scoring ≥70% against your profile — grouped by source site.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-title">Matched Jobs</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-sub">Jobs scoring ≥70% against your profile.</div>', unsafe_allow_html=True)
 
     matched = database.get_jobs_by_status("matched")
 
     if not matched:
-        st.warning("No matched jobs yet. Run **Search** then **Match Jobs** from the Dashboard.")
+        st.info("No matched jobs yet. Run a search from the Dashboard first.")
     else:
-        # Filters
         col1, col2 = st.columns(2)
         with col1:
-            min_score = st.slider("Min score", 70, 100, 70)
+            min_score = st.slider("Minimum score", 70, 100, 70)
         with col2:
-            sort_by = st.selectbox("Sort by", ["Score (high→low)", "Company A→Z"])
+            sort_by = st.selectbox("Sort by", ["Score (high to low)", "Company A–Z"])
 
         filtered = [j for j in matched if (j.get("match_score") or 0) >= min_score]
         if "Company" in sort_by:
@@ -934,26 +948,14 @@ elif "Matched" in page:
         else:
             filtered.sort(key=lambda j: j.get("match_score") or 0, reverse=True)
 
-        # Group by source
         from collections import defaultdict
         grouped: dict[str, list] = defaultdict(list)
         for job in filtered:
             grouped[job.get("source") or "Unknown"].append(job)
 
-        # Source icons
-        SOURCE_ICONS = {
-            "RemoteOK":      "🟢",
-            "Arbeitnow":     "🔵",
-            "TheMuse":       "🟣",
-            "HN Hiring":     "🟠",
-            "Remotive":      "🔴",
-            "Jobicy":        "🟡",
-            "WorkingNomads": "🌍",
-            "Himalayas":     "🏔️",
-        }
-
         st.markdown(
-            f'<div class="page-sub">Showing <b>{len(filtered)}</b> jobs across <b>{len(grouped)}</b> sources</div>',
+            f'<div style="font-size:0.78rem;color:#3d4f6b;margin-bottom:1.5rem">'
+            f'{len(filtered)} jobs across {len(grouped)} sources</div>',
             unsafe_allow_html=True,
         )
 
@@ -974,39 +976,32 @@ elif "Matched" in page:
                 pass
 
             sc = score_color(score)
-            skills_html = " ".join(
-                f'<span class="skill-tag">{s}</span>' for s in matched_skills[:10]
-            )
-            salary_html = (
-                f'<span style="color:#34d399;font-size:0.82rem">💰 {salary}</span>&nbsp;&nbsp;'
-                if salary else ""
-            )
+            skills_html = " ".join(f'<span class="skill-tag">{s}</span>' for s in matched_skills[:10])
+            meta_parts  = [p for p in [company, location] if p]
+            salary_str  = f' · {salary}' if salary else ""
 
             st.markdown(f"""
             <div class="job-card">
-                <div class="job-title">{title}</div>
-                <div class="job-meta">🏢 {company}&nbsp;&nbsp;📍 {location}</div>
-                <span class="score-badge" style="background:{sc}22;color:{sc};border:1px solid {sc}44">
-                    {score:.0f}% match
-                </span>
-                {salary_html}
-                <div style="margin-top:10px">{skills_html}</div>
-                <div class="desc">{desc}{"..." if len(job.get("description") or "") > 400 else ""}</div>
+                <div style="display:flex;align-items:flex-start;justify-content:space-between">
+                    <div class="job-title">{title}</div>
+                    <span class="score-pill" style="background:{sc}18;color:{sc}">{score:.0f}%</span>
+                </div>
+                <div class="job-meta">{' · '.join(meta_parts)}{salary_str}</div>
+                <div style="margin-bottom:8px">{skills_html}</div>
+                <div class="desc">{desc}{"…" if len(job.get("description") or "") > 400 else ""}</div>
             </div>
             """, unsafe_allow_html=True)
 
-            btn1, btn2, _ = st.columns([1, 1, 5])
+            btn1, btn2, _ = st.columns([1, 1, 6])
             if url:
-                btn1.link_button("🌐 Open Job", url, use_container_width=True)
-            if btn2.button("✕ Skip", key=f"skip_{page_key}_{job['id']}", use_container_width=True):
+                btn1.link_button("Open", url, use_container_width=True)
+            if btn2.button("Skip", key=f"skip_{page_key}_{job['id']}", use_container_width=True):
                 database.set_match(job["id"], 0, json.dumps({"reason": "Manually skipped"}))
                 st.rerun()
-            st.markdown("")
 
-        # Render each source as a collapsible section
         for source, jobs in sorted(grouped.items(), key=lambda x: -len(x[1])):
-            icon = SOURCE_ICONS.get(source, "🔷")
-            with st.expander(f"{icon} {source}  —  {len(jobs)} job{'s' if len(jobs) != 1 else ''}", expanded=True):
+            n = len(jobs)
+            with st.expander(f"{source}  ·  {n} {'job' if n == 1 else 'jobs'}", expanded=True):
                 for job in jobs:
                     render_job_card(job, page_key=source)
 
@@ -1017,30 +1012,24 @@ elif "Matched" in page:
 
 elif "Apply" in page:
     _guest_block()
-    st.markdown('<div class="page-title">🚀 Apply to Jobs</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-title">Apply</div>', unsafe_allow_html=True)
 
     matched = database.get_jobs_by_status("matched")
     snoozed = st.session_state.get("snoozed_jobs", set())
     matched = [j for j in matched if j["id"] not in snoozed]
-    applied_count = stats.get("applied", 0)
-    remaining_count = len(matched)
-    total_pipeline = applied_count + remaining_count
 
     st.markdown(
-        f'<div class="page-sub">📊 {applied_count} applied · {remaining_count} remaining</div>',
+        f'<div class="page-sub">{stats.get("applied", 0)} applied · {len(matched)} remaining</div>',
         unsafe_allow_html=True,
     )
 
-    if total_pipeline > 0:
-        st.progress(applied_count / total_pipeline)
-
     if not matched:
-        st.warning("No matched jobs. Run **Search** then **Match Jobs** first.")
+        st.info("No matched jobs to apply to. Run a search first.")
     else:
         for job in matched:
-            job_id   = job["id"]
-            score    = job.get("match_score") or 0
-            title    = job.get("title")   or "Unknown"
+            job_id = job["id"]
+            score  = job.get("match_score") or 0
+            title  = job.get("title")   or "Unknown"
             company  = job.get("company") or "Unknown"
             location = job.get("location") or ""
             url      = job.get("url") or ""
@@ -1055,48 +1044,36 @@ elif "Apply" in page:
                 pass
 
             sc = score_color(score)
-            skills_html = " ".join(
-                f'<span class="skill-tag">{s}</span>' for s in matched_skills[:10]
-            )
-            salary_html = (
-                f'<span style="color:#34d399;font-size:0.82rem">💰 {salary}</span>&nbsp;&nbsp;'
-                if salary else ""
-            )
+            skills_html = " ".join(f'<span class="skill-tag">{s}</span>' for s in matched_skills[:10])
+            meta_parts  = [p for p in [company, location] if p]
+            salary_str  = f' · {salary}' if salary else ""
 
             st.markdown(f"""
             <div class="job-card">
-                <div class="job-title">{title}</div>
-                <div class="job-meta">🏢 {company}&nbsp;&nbsp;📍 {location}</div>
-                <span class="score-badge" style="background:{sc}22;color:{sc};border:1px solid {sc}44">
-                    {score:.0f}% match
-                </span>
-                {salary_html}
-                <div style="margin-top:10px">{skills_html}</div>
-                <div class="desc">{desc}{"..." if len(job.get("description") or "") > 350 else ""}</div>
+                <div style="display:flex;align-items:flex-start;justify-content:space-between">
+                    <div class="job-title">{title}</div>
+                    <span class="score-pill" style="background:{sc}18;color:{sc}">{score:.0f}%</span>
+                </div>
+                <div class="job-meta">{' · '.join(meta_parts)}{salary_str}</div>
+                <div style="margin-bottom:8px">{skills_html}</div>
+                <div class="desc">{desc}{"…" if len(job.get("description") or "") > 350 else ""}</div>
             </div>
             """, unsafe_allow_html=True)
 
-            btn_open, btn_applied, btn_later, btn_skip = st.columns(4)
-
+            b1, b2, b3, b4 = st.columns(4)
             if url:
-                btn_open.link_button("🌐 Open Job", url, use_container_width=True)
+                b1.link_button("Open", url, use_container_width=True)
             else:
-                btn_open.button("🌐 Open Job", key=f"open_{job_id}", disabled=True, use_container_width=True)
-
-            if btn_applied.button("✅ Mark as Applied", key=f"applied_{job_id}", use_container_width=True):
+                b1.button("Open", key=f"open_{job_id}", disabled=True, use_container_width=True)
+            if b2.button("Mark applied", key=f"applied_{job_id}", use_container_width=True):
                 database.set_applied(job_id)
                 st.rerun()
-
-            if btn_later.button("⏭ Keep for Later", key=f"later_{job_id}", use_container_width=True):
-                if "snoozed_jobs" not in st.session_state:
-                    st.session_state["snoozed_jobs"] = set()
-                st.session_state["snoozed_jobs"].add(job_id)
+            if b3.button("Keep for later", key=f"later_{job_id}", use_container_width=True):
+                st.session_state.setdefault("snoozed_jobs", set()).add(job_id)
                 st.rerun()
-
-            if btn_skip.button("✕ Not Interested", key=f"skip_{job_id}", use_container_width=True):
+            if b4.button("Not interested", key=f"skip_{job_id}", use_container_width=True):
                 database.set_match(job_id, 0, json.dumps({"reason": "Not interested"}))
                 st.rerun()
-
             st.markdown("")
 
 
@@ -1108,48 +1085,45 @@ elif "Tracker" in page:
     _guest_block()
     import tracker as _tracker
 
-    st.markdown('<div class="page-title">📊 Application Tracker</div>', unsafe_allow_html=True)
-    st.markdown('<div class="page-sub">Track the status of every job the bot processed — update as you hear back.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-title">Tracker</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-sub">Update outcomes as you hear back from companies.</div>', unsafe_allow_html=True)
 
     jobs = _tracker.get_all_jobs()
 
     if not jobs:
-        st.info("No jobs tracked yet. Run the bot and apply to some jobs first.")
+        st.info("No applications tracked yet.")
     else:
-        # Summary stats
         from collections import Counter
-        status_counts = Counter(j.get("Status", "") for j in jobs)
-        c1, c2, c3, c4, c5 = st.columns(5)
-        stat_card(c1, "Total",            len(jobs),                              "#60a5fa")
-        stat_card(c2, "Applied",          status_counts.get("Applied", 0),        "#a78bfa")
-        stat_card(c3, "Manual Pending",   status_counts.get("Manual - Pending", 0),"#fbbf24")
-        stat_card(c4, "Interview",        status_counts.get("Interview", 0),      "#34d399")
-        stat_card(c5, "Accepted",         status_counts.get("Accepted", 0),       "#22c55e")
+        sc = Counter(j.get("Status", "") for j in jobs)
+        st.markdown(f"""
+        <div class="summary-row" style="margin-bottom:1.5rem">
+            <div class="summary-item"><div class="num">{len(jobs)}</div><div class="lbl">Total</div></div>
+            <div class="summary-item"><div class="num">{sc.get("Applied", 0)}</div><div class="lbl">Applied</div></div>
+            <div class="summary-item"><div class="num">{sc.get("Interview", 0)}</div><div class="lbl">Interview</div></div>
+            <div class="summary-item"><div class="num">{sc.get("Accepted", 0)}</div><div class="lbl">Accepted</div></div>
+            <div class="summary-item"><div class="num">{sc.get("Denied", 0)}</div><div class="lbl">Denied</div></div>
+        </div>
+        """, unsafe_allow_html=True)
 
-        st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
-
-        # Download button
         tracker_files = _tracker.list_tracker_files()
         if tracker_files:
             latest = tracker_files[-1]
             with open(latest, "rb") as f:
-                st.download_button(
-                    "⬇️ Download Excel Tracker",
-                    data=f.read(),
-                    file_name=latest.name,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                )
+                st.download_button("Download Excel", data=f.read(), file_name=latest.name,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
         st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
-        # Filter by status
-        all_statuses = ["All"] + _tracker.STATUS_OPTIONS
-        status_filter = st.selectbox("Filter by status", all_statuses)
+        status_filter = st.selectbox("Filter", ["All"] + _tracker.STATUS_OPTIONS, label_visibility="collapsed")
         filtered = jobs if status_filter == "All" else [j for j in jobs if j.get("Status") == status_filter]
 
-        st.markdown(f"**{len(filtered)} job(s)**")
+        st.markdown(f'<div style="font-size:0.78rem;color:#3d4f6b;margin-bottom:1rem">{len(filtered)} job{"s" if len(filtered) != 1 else ""}</div>', unsafe_allow_html=True)
 
-        # Render each job as a card with status update dropdown
+        status_color_map = {
+            "Applied": "#60a5fa", "Manual - Pending": "#f59e0b",
+            "Interview": "#34d399", "Accepted": "#34d399", "Denied": "#f87171",
+        }
+
         for i, job in enumerate(filtered):
             url     = job.get("URL", "")
             title   = job.get("Job Title", "Unknown")
@@ -1157,40 +1131,34 @@ elif "Tracker" in page:
             status  = job.get("Status", "Applied")
             date    = job.get("Date Applied", "")
             score   = job.get("Match Score", "")
-            method  = job.get("Method", "")
-
-            sc = {"Applied": "#a78bfa", "Manual - Pending": "#fbbf24",
-                  "Interview": "#34d399", "Accepted": "#22c55e", "Denied": "#f87171"}.get(status, "#94a3b8")
+            sc_col  = status_color_map.get(status, "#5c6a82")
+            meta    = " · ".join(p for p in [company, date, score] if p)
 
             st.markdown(f"""
             <div class="job-card">
-                <div class="job-title">{title}</div>
-                <div class="job-meta">🏢 {company} &nbsp;·&nbsp; 📅 {date} &nbsp;·&nbsp; 🎯 {score} &nbsp;·&nbsp; 📨 {method}</div>
-                <span class="score-badge" style="background:{sc}22;color:{sc};border:1px solid {sc}44">{status}</span>
+                <div style="display:flex;align-items:flex-start;justify-content:space-between">
+                    <div class="job-title">{title}</div>
+                    <span class="status-badge" style="background:{sc_col}18;color:{sc_col}">{status}</span>
+                </div>
+                <div class="job-meta">{meta}</div>
             </div>
             """, unsafe_allow_html=True)
 
             col_status, col_notes, col_save, col_open = st.columns([2, 3, 1, 1])
             with col_status:
-                new_status = st.selectbox(
-                    "Status",
-                    _tracker.STATUS_OPTIONS,
+                new_status = st.selectbox("Status", _tracker.STATUS_OPTIONS,
                     index=_tracker.STATUS_OPTIONS.index(status) if status in _tracker.STATUS_OPTIONS else 0,
-                    key=f"status_{i}",
-                    label_visibility="collapsed",
-                )
+                    key=f"status_{i}", label_visibility="collapsed")
             with col_notes:
-                notes = st.text_input("Notes", value=job.get("Notes", "") or "", key=f"notes_{i}", label_visibility="collapsed", placeholder="Add notes...")
+                notes = st.text_input("Notes", value=job.get("Notes", "") or "",
+                    key=f"notes_{i}", label_visibility="collapsed", placeholder="Notes...")
             with col_save:
-                if st.button("💾 Save", key=f"save_{i}", use_container_width=True):
+                if st.button("Save", key=f"save_{i}", use_container_width=True):
                     _tracker.update_status(url, new_status, notes)
-                    st.success("Saved!")
                     st.rerun()
             with col_open:
                 if url:
-                    st.link_button("🌐 Open", url, use_container_width=True)
-
-            st.markdown("")
+                    st.link_button("Open", url, use_container_width=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1199,99 +1167,69 @@ elif "Tracker" in page:
 
 elif "Settings" in page:
     _guest_block()
-    st.markdown('<div class="page-title">⚙️ Settings</div>', unsafe_allow_html=True)
-    st.markdown('<div class="page-sub">Configure your job search, profile, and matching preferences.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-title">Settings</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-sub">Configure your search, profile, and matching preferences.</div>', unsafe_allow_html=True)
 
     cfg = load_config()
 
-    with st.expander("📄 Resume", expanded=True):
+    with st.expander("Resume", expanded=True):
         existing_resume = database.get_resume_content()
-        if existing_resume:
-            st.caption(f"✅ Resume in system — {len(existing_resume):,} characters detected")
-        else:
-            st.caption("⚠️ No resume uploaded yet.")
-
-        uploaded = st.file_uploader(
-            "Upload your resume to auto-fill your profile and improve matching",
-            type=["pdf", "docx"],
-            label_visibility="collapsed",
-        )
-
+        st.caption(f"{len(existing_resume):,} characters stored" if existing_resume else "No resume uploaded yet.")
+        uploaded = st.file_uploader("Upload PDF or DOCX", type=["pdf", "docx"], label_visibility="collapsed")
         if uploaded is not None:
-            import tempfile
             import resume_parser as rp
             suffix = Path(uploaded.name).suffix.lower()
             resume_path = BOT_DIR / f"uploaded_resume{suffix}"
             resume_path.write_bytes(uploaded.getvalue())
-
             text = rp.extract_text(resume_path)
             if text and not text.startswith("["):
                 database.save_resume(str(resume_path), text)
                 profile_data = rp.extract_resume_profile(text)
                 st.session_state["auto_profile"] = profile_data
-
-                st.success(f"✅ Parsed **{uploaded.name}** — {len(text):,} characters")
-
+                st.success(f"Parsed {uploaded.name} — {len(text):,} characters")
                 if profile_data.get("skills"):
-                    st.markdown("**Detected skills:**")
-                    skills_html = " ".join(
-                        f'<span class="skill-tag">{s}</span>'
-                        for s in profile_data["skills"]
-                    )
+                    skills_html = " ".join(f'<span class="skill-tag">{s}</span>' for s in profile_data["skills"])
                     st.markdown(skills_html, unsafe_allow_html=True)
-
-                col_a, col_b = st.columns(2)
-                if col_a.button("⬇️ Auto-fill Profile from Resume", type="primary"):
-                    st.rerun()
             else:
-                st.error(f"Could not parse {uploaded.name}. Try a different file.")
+                st.error(f"Could not parse {uploaded.name}.")
 
-    with st.expander("🔍 Job Search Queries", expanded=True):
-        titles_raw = st.text_area(
-            "One search query per line",
-            value="\n".join(cfg.get("job_titles", [])),
-            height=320,
-            label_visibility="collapsed",
-        )
-        st.caption(f"{len([t for t in titles_raw.splitlines() if t.strip()])} queries active")
+    with st.expander("Job titles", expanded=True):
+        titles_raw = st.text_area("One per line", value="\n".join(cfg.get("job_titles", [])),
+            height=280, label_visibility="collapsed")
+        st.caption(f"{len([t for t in titles_raw.splitlines() if t.strip()])} titles active")
 
-    with st.expander("🚫 Company Blacklist", expanded=False):
-        st.caption("Jobs from these companies will be automatically skipped. One company per line.")
-        blacklist_raw = st.text_area(
-            "Blacklisted companies",
-            value="\n".join(cfg.get("blacklisted_companies", [])),
-            height=150,
-            label_visibility="collapsed",
-            placeholder="e.g.\nAmazon\nUber\nMeta",
-        )
+    with st.expander("Company blacklist", expanded=False):
+        st.caption("Jobs from these companies will be skipped automatically.")
+        blacklist_raw = st.text_area("One per line", value="\n".join(cfg.get("blacklisted_companies", [])),
+            height=120, label_visibility="collapsed", placeholder="Amazon\nUber\nMeta")
 
-    with st.expander("🎯 Matching Settings", expanded=True):
+    with st.expander("Matching", expanded=True):
         col1, col2, col3 = st.columns(3)
         with col1:
-            threshold = st.slider("Match threshold (%)", 50, 95, int(cfg.get("match_threshold", 70)))
+            threshold = st.slider("Score threshold (%)", 50, 95, int(cfg.get("match_threshold", 70)))
         with col2:
-            remote_only = st.checkbox("Remote jobs only", value=cfg.get("remote_only", False))
+            remote_only = st.checkbox("Remote only", value=cfg.get("remote_only", False))
         with col3:
-            expiry_days = st.number_input("Auto-expire jobs after (days)", min_value=7, max_value=90, value=int(cfg.get("job_expiry_days", 30)))
+            expiry_days = st.number_input("Expire jobs after (days)", min_value=7, max_value=90, value=int(cfg.get("job_expiry_days", 30)))
 
-    with st.expander("👤 Your Profile", expanded=True):
+    with st.expander("Your profile", expanded=True):
         auto_profile = st.session_state.get("auto_profile", {})
-        profile = {**cfg.get("profile", {}), **auto_profile}  # session_state takes priority
+        profile = {**cfg.get("profile", {}), **auto_profile}
         col1, col2 = st.columns(2)
         with col1:
-            name     = st.text_input("Full Name",  value=profile.get("name", ""))
+            name     = st.text_input("Full name",  value=profile.get("name", ""))
             email    = st.text_input("Email",      value=profile.get("email", ""))
             phone    = st.text_input("Phone",      value=profile.get("phone", ""))
         with col2:
             city     = st.text_input("City",       value=profile.get("city", ""))
             website  = st.text_input("Website",    value=profile.get("website", ""))
             linkedin = st.text_input("LinkedIn handle", value=profile.get("linkedin_handle", ""))
-        summary = st.text_area("Professional Summary", value=profile.get("summary", ""), height=120)
+        summary = st.text_area("Summary", value=profile.get("summary", ""), height=100)
 
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
-    if st.button("💾  Save Settings", type="primary"):
-        cfg["job_titles"]           = [t.strip() for t in titles_raw.splitlines() if t.strip()]
+    if st.button("Save settings", type="primary"):
+        cfg["job_titles"]            = [t.strip() for t in titles_raw.splitlines() if t.strip()]
         cfg["blacklisted_companies"] = [t.strip() for t in blacklist_raw.splitlines() if t.strip()]
         cfg["match_threshold"]  = threshold
         cfg["remote_only"]      = remote_only
@@ -1302,4 +1240,4 @@ elif "Settings" in page:
             "linkedin_handle": linkedin, "summary": summary,
         }
         save_config(cfg)
-        st.success("✅ Settings saved!")
+        st.success("Settings saved.")
