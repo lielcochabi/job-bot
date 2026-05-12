@@ -1,6 +1,8 @@
-# 🤖 Job Bot
+# Job Bot
 
 An automated job application bot that searches multiple job boards, scores listings against your profile, and applies or queues applications — with email notifications and an Excel tracker.
+
+**Live:** [jobfindingbot.streamlit.app](https://jobfindingbot.streamlit.app)
 
 ---
 
@@ -118,7 +120,7 @@ job-bot/
 ├── job_matcher.py      # Rule-based scoring engine
 ├── job_submitter.py    # Apply via LinkedIn / email / manual queue
 ├── tracker.py          # Excel application tracker
-├── database.py         # SQLite persistence
+├── database.py         # MongoDB persistence
 ├── resume_parser.py    # PDF/DOCX resume parser
 ├── secrets_manager.py  # .env / Streamlit Cloud secrets
 ├── tests/              # pytest test suite
