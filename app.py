@@ -267,6 +267,19 @@ def show_auth_page():
                     else:
                         st.error(msg)
 
+        # Guest access
+        st.markdown("---")
+        st.markdown(
+            '<div style="text-align:center;color:#64748b;font-size:0.85rem;margin-bottom:8px">'
+            'Just browsing? View the dashboard without an account.'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        if st.button("👀 Continue as Guest", use_container_width=True, key="guest_btn"):
+            st.session_state["username"] = "__guest__"
+            st.session_state["is_guest"] = True
+            st.rerun()
+
 
 if "username" not in st.session_state:
     show_auth_page()
@@ -278,9 +291,36 @@ if "username" not in st.session_state:
 # ---------------------------------------------------------------------------
 
 _username = st.session_state["username"]
+_is_guest = st.session_state.get("is_guest", False)
 
 # Point the database module at this user's data
 database.set_username(_username)
+
+
+def _guest_block():
+    """Show a login prompt and stop rendering if the user is a guest."""
+    if not _is_guest:
+        return
+    st.markdown("""
+    <div style="max-width:480px;margin:80px auto;background:#1e293b;
+                border:1px solid #6366f1;border-radius:16px;
+                padding:40px 32px;text-align:center;">
+        <div style="font-size:2.5rem;margin-bottom:12px">🔒</div>
+        <div style="font-size:1.2rem;font-weight:700;color:#e2e8f0;margin-bottom:8px">
+            Login Required
+        </div>
+        <div style="font-size:0.9rem;color:#94a3b8;margin-bottom:24px">
+            Create a free account to access this feature.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    _, mid, _ = st.columns([1, 1.4, 1])
+    with mid:
+        if st.button("🔑 Log In / Sign Up", type="primary", use_container_width=True, key="guest_login_redirect"):
+            st.session_state.pop("username", None)
+            st.session_state.pop("is_guest", None)
+            st.rerun()
+    st.stop()
 
 
 # ---------------------------------------------------------------------------
@@ -543,10 +583,17 @@ with st.sidebar:
     st.markdown(f"**Applied:** &nbsp;&nbsp;&nbsp;`{stats['applied']}`", unsafe_allow_html=True)
     st.markdown(f"**Avg score:** &nbsp;`{stats['avg_score']}%`", unsafe_allow_html=True)
     st.markdown("---")
-    st.markdown(f"👤 **{_username}**", unsafe_allow_html=True)
-    if st.button("🚪 Logout", use_container_width=True):
-        _do_logout()
-        st.rerun()
+    if _is_guest:
+        st.markdown("👀 **Guest**", unsafe_allow_html=True)
+        if st.button("🔑 Log In / Sign Up", use_container_width=True, type="primary"):
+            st.session_state.pop("username", None)
+            st.session_state.pop("is_guest", None)
+            st.rerun()
+    else:
+        st.markdown(f"👤 **{_username}**", unsafe_allow_html=True)
+        if st.button("🚪 Logout", use_container_width=True):
+            _do_logout()
+            st.rerun()
 
 
 # ---------------------------------------------------------------------------
@@ -556,6 +603,9 @@ with st.sidebar:
 if "Dashboard" in page:
     st.markdown('<div class="page-title">🏠 Dashboard</div>', unsafe_allow_html=True)
     st.markdown('<div class="page-sub">Your automated job application pipeline at a glance.</div>', unsafe_allow_html=True)
+
+    if _is_guest:
+        st.info("👀 You're browsing as a guest. **Log in or sign up** to search jobs, run the pipeline, and track applications.", icon="ℹ️")
 
     c1, c2, c3, c4, c5 = st.columns(5)
     stat_card(c1, "Total Found",  stats["total"],           "#60a5fa")
@@ -621,6 +671,7 @@ if "Dashboard" in page:
 # ---------------------------------------------------------------------------
 
 elif "Search" in page:
+    _guest_block()
     st.markdown('<div class="page-title">🔍 Search Jobs</div>', unsafe_allow_html=True)
 
     # Flow explanation
@@ -773,6 +824,7 @@ elif "Search" in page:
 # ---------------------------------------------------------------------------
 
 elif "Matched" in page:
+    _guest_block()
     st.markdown('<div class="page-title">🎯 Matched Jobs</div>', unsafe_allow_html=True)
     st.markdown('<div class="page-sub">Jobs scoring ≥70% against your profile — grouped by source site.</div>', unsafe_allow_html=True)
 
@@ -876,6 +928,7 @@ elif "Matched" in page:
 # ---------------------------------------------------------------------------
 
 elif "Apply" in page:
+    _guest_block()
     st.markdown('<div class="page-title">🚀 Apply to Jobs</div>', unsafe_allow_html=True)
 
     matched = database.get_jobs_by_status("matched")
@@ -964,6 +1017,7 @@ elif "Apply" in page:
 # ---------------------------------------------------------------------------
 
 elif "Tracker" in page:
+    _guest_block()
     import tracker as _tracker
 
     st.markdown('<div class="page-title">📊 Application Tracker</div>', unsafe_allow_html=True)
@@ -1056,6 +1110,7 @@ elif "Tracker" in page:
 # ---------------------------------------------------------------------------
 
 elif "Settings" in page:
+    _guest_block()
     st.markdown('<div class="page-title">⚙️ Settings</div>', unsafe_allow_html=True)
     st.markdown('<div class="page-sub">Configure your job search, profile, and matching preferences.</div>', unsafe_allow_html=True)
 
