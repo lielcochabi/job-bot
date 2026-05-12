@@ -1,23 +1,24 @@
-"""Supabase (PostgreSQL) database for tracking job applications."""
+"""MongoDB database for tracking job applications."""
 import os
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Optional
 
+import certifi
+from pymongo import MongoClient, ASCENDING, DESCENDING
+
 _client = None
+_mongo_db = None
 _local = threading.local()
 
 
-def _get_client():
-    global _client
-    if _client is None:
-        from supabase import create_client
-        url = os.environ.get("SUPABASE_URL", "")
-        key = os.environ.get("SUPABASE_KEY", "")
-        if not url or not key:
-            raise RuntimeError("SUPABASE_URL and SUPABASE_KEY environment variables must be set.")
-        _client = create_client(url, key)
-    return _client
+def _get_db():
+    global _client, _mongo_db
+    if _mongo_db is None:
+        uri = os.environ.get("MONGODB_URI", "mongodb://localhost:27017")
+        _client = MongoClient(uri, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=5000)
+        _mongo_db = _client["job_bot"]
+    return _mongo_db
 
 
 def set_username(username: str):
@@ -34,13 +35,20 @@ def _uname() -> str:
     return getattr(_local, "username", "default")
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+def _doc(row) -> dict:
+    """Convert MongoDB document to plain dict with string 'id' field."""
+    d = dict(row)
+    d["id"] = str(d.pop("_id"))
+    return d
 
 
 def init_db() -> None:
-    """Tables are created via the Supabase SQL editor — nothing to do here."""
-    pass
+    db = _get_db()
+    db.jobs.create_index([("username", ASCENDING), ("url", ASCENDING)], unique=True, sparse=True)
+    db.jobs.create_index([("username", ASCENDING), ("status", ASCENDING)])
+    db.jobs.create_index([("username", ASCENDING), ("match_score", DESCENDING)])
+    db.resumes.create_index([("username", ASCENDING), ("path", ASCENDING)], unique=True)
+    db.configs.create_index("username", unique=True)
 
 
 def upsert_job(
@@ -53,17 +61,13 @@ def upsert_job(
     description: str = "",
     external_id: str = "",
 ) -> Optional[str]:
-    """Insert a job if the URL doesn't already exist. Returns id or None if duplicate."""
     if not url:
         return None
-    client  = _get_client()
+    db = _get_db()
     username = _uname()
-
-    existing = client.table("jobs").select("id").eq("username", username).eq("url", url).execute()
-    if existing.data:
+    if db.jobs.find_one({"username": username, "url": url}):
         return None
-
-    result = client.table("jobs").insert({
+    result = db.jobs.insert_one({
         "username":     username,
         "source":       source,
         "external_id":  external_id,
@@ -77,57 +81,70 @@ def upsert_job(
         "match_score":  None,
         "match_reason": None,
         "status":       "found",
-        "found_at":     _now(),
+        "found_at":     datetime.utcnow().isoformat(),
         "applied_at":   None,
         "notes":        "",
-    }).execute()
-    return result.data[0]["id"] if result.data else None
+    })
+    return str(result.inserted_id)
 
 
 def set_match(job_id, score: float, reason: str) -> None:
+    from bson import ObjectId
+    db = _get_db()
     status = "matched" if score >= 70 else "skipped"
-    _get_client().table("jobs").update({
-        "match_score":  score,
-        "match_reason": reason,
-        "status":       status,
-    }).eq("id", job_id).execute()
+    db.jobs.update_one(
+        {"_id": ObjectId(job_id)},
+        {"$set": {"match_score": score, "match_reason": reason, "status": status}},
+    )
 
 
 def set_applied(job_id, notes: str = "") -> None:
-    _get_client().table("jobs").update({
-        "status":     "applied",
-        "applied_at": _now(),
-        "notes":      notes,
-    }).eq("id", job_id).execute()
+    from bson import ObjectId
+    db = _get_db()
+    db.jobs.update_one(
+        {"_id": ObjectId(job_id)},
+        {"$set": {"status": "applied", "applied_at": datetime.utcnow().isoformat(), "notes": notes}},
+    )
 
 
 def set_failed(job_id, reason: str = "") -> None:
-    _get_client().table("jobs").update({
-        "status": "failed",
-        "notes":  reason,
-    }).eq("id", job_id).execute()
+    from bson import ObjectId
+    db = _get_db()
+    db.jobs.update_one(
+        {"_id": ObjectId(job_id)},
+        {"$set": {"status": "failed", "notes": reason}},
+    )
 
 
 def get_jobs_by_status(status: str) -> list:
-    result = _get_client().table("jobs").select("*") \
-        .eq("username", _uname()).eq("status", status) \
-        .order("match_score", desc=True).execute()
-    return result.data or []
+    db = _get_db()
+    rows = db.jobs.find(
+        {"username": _uname(), "status": status},
+        sort=[("match_score", DESCENDING)],
+    )
+    return [_doc(r) for r in rows]
 
 
 def get_recent_jobs(hours: int = 24, limit: int = 200) -> list:
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
-    result = _get_client().table("jobs").select("*") \
-        .eq("username", _uname()).gte("found_at", cutoff) \
-        .order("found_at", desc=True).limit(limit).execute()
-    return result.data or []
+    db = _get_db()
+    cutoff = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
+    rows = db.jobs.find(
+        {"username": _uname(), "found_at": {"$gte": cutoff}},
+        sort=[("found_at", DESCENDING)],
+        limit=limit,
+    )
+    return [_doc(r) for r in rows]
 
 
 def cleanup_old_jobs(days: int = 7) -> int:
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    result = _get_client().table("jobs").delete() \
-        .eq("username", _uname()).neq("status", "applied").lt("found_at", cutoff).execute()
-    return len(result.data) if result.data else 0
+    db = _get_db()
+    cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+    result = db.jobs.delete_many({
+        "username": _uname(),
+        "status":   {"$ne": "applied"},
+        "found_at": {"$lt": cutoff},
+    })
+    return result.deleted_count
 
 
 def expire_old_jobs(days: int = 30) -> int:
@@ -135,87 +152,81 @@ def expire_old_jobs(days: int = 30) -> int:
 
 
 def get_unmatched_jobs() -> list:
-    result = _get_client().table("jobs").select("*") \
-        .eq("username", _uname()).is_("match_score", "null").execute()
-    return result.data or []
+    db = _get_db()
+    rows = db.jobs.find({"username": _uname(), "match_score": None})
+    return [_doc(r) for r in rows]
 
 
 def get_stats() -> dict:
-    client   = _get_client()
+    db = _get_db()
     username = _uname()
-
-    def _count(status=None):
-        q = client.table("jobs").select("*", count="exact").eq("username", username)
-        if status:
-            q = q.eq("status", status)
-        return q.execute().count or 0
-
-    total   = _count()
-    found   = _count("found")
-    matched = _count("matched")
-    skipped = _count("skipped")
-    applied = _count("applied")
-    failed  = _count("failed")
-
-    scores_res = client.table("jobs").select("match_score") \
-        .eq("username", username).not_.is_("match_score", "null").execute()
-    scores = [r["match_score"] for r in (scores_res.data or []) if r.get("match_score") is not None]
-    avg_score = sum(scores) / len(scores) if scores else 0
-
+    total   = db.jobs.count_documents({"username": username})
+    found   = db.jobs.count_documents({"username": username, "status": "found"})
+    matched = db.jobs.count_documents({"username": username, "status": "matched"})
+    skipped = db.jobs.count_documents({"username": username, "status": "skipped"})
+    applied = db.jobs.count_documents({"username": username, "status": "applied"})
+    failed  = db.jobs.count_documents({"username": username, "status": "failed"})
+    pipeline = [
+        {"$match": {"username": username, "match_score": {"$ne": None}}},
+        {"$group": {"_id": None, "avg": {"$avg": "$match_score"}}},
+    ]
+    avg_result = list(db.jobs.aggregate(pipeline))
+    avg_score = avg_result[0]["avg"] if avg_result else 0
     return {
-        "total":   total,
-        "found":   found,
-        "matched": matched,
-        "skipped": skipped,
-        "applied": applied,
-        "failed":  failed,
-        "avg_score": round(avg_score, 1),
+        "total":     total,
+        "found":     found,
+        "matched":   matched,
+        "skipped":   skipped,
+        "applied":   applied,
+        "failed":    failed,
+        "avg_score": round(avg_score or 0, 1),
     }
 
 
 def reset_scores_for_rematch() -> int:
-    result = _get_client().table("jobs").update({
-        "match_score":  None,
-        "match_reason": None,
-        "status":       "found",
-    }).eq("username", _uname()).neq("status", "applied").execute()
-    return len(result.data) if result.data else 0
+    db = _get_db()
+    result = db.jobs.update_many(
+        {"username": _uname(), "status": {"$ne": "applied"}},
+        {"$set": {"match_score": None, "match_reason": None, "status": "found"}},
+    )
+    return result.modified_count
 
 
 def save_resume(path: str, content: str) -> None:
-    _get_client().table("resumes").upsert({
-        "username":  _uname(),
-        "path":      path,
-        "content":   content,
-        "parsed_at": _now(),
-    }, on_conflict="username,path").execute()
-
-
-def get_resume_content() -> str:
-    result = _get_client().table("resumes").select("content") \
-        .eq("username", _uname()).order("parsed_at", desc=True).execute()
-    return "\n\n---RESUME VERSION---\n\n".join(
-        r["content"] for r in (result.data or []) if r.get("content")
+    db = _get_db()
+    db.resumes.update_one(
+        {"username": _uname(), "path": path},
+        {"$set": {"content": content, "parsed_at": datetime.utcnow().isoformat()}},
+        upsert=True,
     )
 
 
+def get_resume_content() -> str:
+    db = _get_db()
+    rows = list(db.resumes.find(
+        {"username": _uname()},
+        sort=[("parsed_at", DESCENDING)],
+    ))
+    return "\n\n---RESUME VERSION---\n\n".join(r["content"] for r in rows if r.get("content"))
+
+
 def load_config() -> dict:
-    result = _get_client().table("configs").select("config") \
-        .eq("username", _uname()).execute()
-    if result.data:
-        return result.data[0].get("config") or {}
-    # Fall back to root config.json for defaults
+    db = _get_db()
+    doc = db.configs.find_one({"username": _uname()})
+    if doc:
+        return doc.get("config", {})
     from pathlib import Path
-    import json
     root_cfg = Path(__file__).parent / "config.json"
     if root_cfg.exists():
+        import json
         return json.loads(root_cfg.read_text(encoding="utf-8"))
     return {}
 
 
 def save_config(cfg: dict) -> None:
-    _get_client().table("configs").upsert({
-        "username":   _uname(),
-        "config":     cfg,
-        "updated_at": _now(),
-    }, on_conflict="username").execute()
+    db = _get_db()
+    db.configs.update_one(
+        {"username": _uname()},
+        {"$set": {"config": cfg}},
+        upsert=True,
+    )
