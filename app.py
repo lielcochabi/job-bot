@@ -708,9 +708,9 @@ def render_task_panel(task_key: str, title: str) -> bool:
 
     # ── Header row ──────────────────────────────────────────────────────────
     if running:
-        header_col, stop_col, close_col = st.columns([9, 1.2, 1])
+        header_col, stop_col, close_col = st.columns([11, 0.6, 0.6])
     else:
-        header_col, close_col = st.columns([11, 1])
+        header_col, close_col = st.columns([13, 0.6])
 
     with header_col:
         if running:
@@ -746,12 +746,14 @@ def render_task_panel(task_key: str, title: str) -> bool:
 
     if running:
         with stop_col:
-            if st.button("Stop", key=f"stop_{task_key}", use_container_width=True):
+            if st.button("■", key=f"stop_{task_key}", use_container_width=True,
+                         help="Stop process"):
                 stop_task(task_key, status_path)
                 st.rerun()
 
     with close_col:
-        if st.button("Close", key=f"close_{task_key}", use_container_width=True):
+        if st.button("✕", key=f"close_{task_key}", use_container_width=True,
+                     help="Dismiss"):
             st.session_state[task_key]["visible"] = False
             st.rerun()
 
@@ -777,7 +779,7 @@ def render_task_panel(task_key: str, title: str) -> bool:
 # Live task panel — only this fragment reruns, not the whole page
 # ---------------------------------------------------------------------------
 
-@st.fragment(run_every=1)
+@st.fragment(run_every=0.5)
 def live_task_panel(task_key: str, title: str):
     render_task_panel(task_key, title)
 
@@ -813,7 +815,7 @@ def _init_db_once():
 def _get_stats(username: str) -> dict:
     return database.get_stats()
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=10, show_spinner=False)
 def _has_resume_cached(username: str) -> bool:
     return bool(database.get_resume_content())
 
@@ -821,12 +823,13 @@ _init_db_once()
 database.cleanup_old_jobs(days=7)
 stats = _get_stats(_username)
 
-_PAGES = ["Dashboard", "Search", "Matched Jobs", "Apply", "Tracker", "Settings"]
+_PAGES = ["Dashboard", "Search", "Matched Jobs", "Apply", "Tracker", "Settings", "Help"]
 
 def _go(page_fragment: str):
     for p in _PAGES:
         if page_fragment in p:
             st.session_state["nav_page"] = p
+            st.session_state["nav_radio"] = p   # keep radio in sync
             break
     st.rerun()
 
@@ -896,34 +899,22 @@ if "Dashboard" in page:
     s0,c0,l0 = _step(0); s1,c1,l1 = _step(1)
     s2,c2,l2 = _step(2); s3,c3,l3 = _step(3)
 
-    st.markdown(f"""
-    <div class="step-row">
-      <div class="step-card {s0}">
-        <div class="step-num" style="color:{c0}">Step 1</div>
-        <div class="step-title">Upload resume</div>
-        <div class="step-desc">Settings → Resume. Needed for scoring.</div>
-        <span class="step-status" style="color:{c0}">{l0}</span>
-      </div>
-      <div class="step-card {s1}">
-        <div class="step-num" style="color:{c1}">Step 2</div>
-        <div class="step-title">Search jobs</div>
-        <div class="step-desc">Scan 8 job boards for new listings.</div>
-        <span class="step-status" style="color:{c1}">{l1}</span>
-      </div>
-      <div class="step-card {s2}">
-        <div class="step-num" style="color:{c2}">Step 3</div>
-        <div class="step-title">Score matches</div>
-        <div class="step-desc">{"AI scoring (Llama 3)." if _has_ai else "Rule-based scoring against your profile."}</div>
-        <span class="step-status" style="color:{c2}">{l2}</span>
-      </div>
-      <div class="step-card {s3}">
-        <div class="step-num" style="color:{c3}">Step 4</div>
-        <div class="step-title">Apply</div>
-        <div class="step-desc">Review matched jobs and send applications.</div>
-        <span class="step-status" style="color:{c3}">{l3}</span>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
+    sc1, sc2, sc3, sc4 = st.columns(4)
+    with sc1:
+        st.markdown(f'<div class="step-card {s0}"><div class="step-num" style="color:{c0}">Step 1</div><div class="step-title">Upload resume</div><div class="step-desc">Settings → Resume. Needed for scoring.</div><span class="step-status" style="color:{c0}">{l0}</span></div>', unsafe_allow_html=True)
+        if st.button("Open Settings →", key="sc1", use_container_width=True): _go("Settings")
+    with sc2:
+        st.markdown(f'<div class="step-card {s1}"><div class="step-num" style="color:{c1}">Step 2</div><div class="step-title">Search jobs</div><div class="step-desc">Scan 8 job boards for new listings.</div><span class="step-status" style="color:{c1}">{l1}</span></div>', unsafe_allow_html=True)
+        if st.button("Open Search →", key="sc2", use_container_width=True): _go("Search")
+    with sc3:
+        st.markdown(f'<div class="step-card {s2}"><div class="step-num" style="color:{c2}">Step 3</div><div class="step-title">Score matches</div><div class="step-desc">{"AI scoring (Llama 3)." if _has_ai else "Rule-based scoring."}</div><span class="step-status" style="color:{c2}">{l2}</span></div>', unsafe_allow_html=True)
+        if st.button(_mlabel if "_mlabel" in dir() else "Score now", key="sc3_btn",
+                     use_container_width=True, disabled=not _has_jobs):
+            if _has_resume:
+                launch_task([PYTHON, "-u", "main.py"] + (["rematch","--ai"] if _has_ai else ["rematch"]), "task_rematch")
+    with sc4:
+        st.markdown(f'<div class="step-card {s3}"><div class="step-num" style="color:{c3}">Step 4</div><div class="step-title">Apply</div><div class="step-desc">Review matched jobs and send applications.</div><span class="step-status" style="color:{c3}">{l3}</span></div>', unsafe_allow_html=True)
+        if st.button("Open Apply →", key="sc4", use_container_width=True, disabled=not _has_matches): _go("Apply")
 
     st.markdown(f"""
     <div class="summary-row">
@@ -1437,3 +1428,95 @@ elif "Settings" in page:
         }
         save_config(cfg)
         st.success("Settings saved.")
+
+    st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+    with st.expander("Database", expanded=False):
+        st.caption(f"Total jobs stored: {stats['total']} · Applied (kept forever): {stats['applied']}")
+        col_a, col_b = st.columns(2)
+        if col_a.button("Clean jobs older than 7 days", use_container_width=True):
+            deleted = database.cleanup_old_jobs(days=7)
+            _get_stats.clear()
+            st.success(f"Removed {deleted} old jobs.")
+            st.rerun()
+        if col_b.button("Reset all scores for re-matching", use_container_width=True):
+            count = database.reset_scores_for_rematch()
+            _get_stats.clear()
+            st.success(f"Reset {count} jobs.")
+            st.rerun()
+
+
+# ---------------------------------------------------------------------------
+# Help
+# ---------------------------------------------------------------------------
+
+elif "Help" in page:
+    st.markdown('<div class="page-title">Help</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-sub">How to use Job Bot from start to finish.</div>', unsafe_allow_html=True)
+
+    st.markdown("""
+    ### How it works
+
+    Job Bot automates job searching in 4 steps. Follow them in order.
+
+    ---
+
+    **Step 1 — Upload your resume** (Settings → Resume)
+
+    Upload a PDF or DOCX. The bot reads your skills, experience, and role title from it
+    and uses this to score how well each job matches your profile.
+
+    ---
+
+    **Step 2 — Search jobs** (Search page)
+
+    The bot scans up to 8 job boards simultaneously:
+    RemoteOK, Arbeitnow, The Muse, HN Who's Hiring, Remotive, Jobicy, Working Nomads, Himalayas.
+
+    Pick which job titles to search for and which sites to include, then click **Start search**.
+    Results are saved to the database — running search again only adds new listings.
+
+    ---
+
+    **Step 3 — Score matches** (Dashboard → Score matches)
+
+    Each saved job gets a score from 0–100 based on how well it matches your resume.
+
+    - **Rule-based scoring** — fast, free, works always. Checks skills, seniority, location, language.
+    - **AI scoring (Llama 3)** — smarter, uses your OpenRouter API key. Reads the full job description.
+
+    Jobs scoring ≥70% are marked as **Matched** and appear in the Matched Jobs page.
+
+    ---
+
+    **Step 4 — Apply** (Apply page)
+
+    Review each matched job. For every listing you can:
+    - **Open** — go to the job posting
+    - **Mark applied** — records it as applied, removes from the queue
+    - **Keep for later** — hides it this session
+    - **Not interested** — removes it permanently
+
+    ---
+
+    ### Pages
+
+    | Page | What it does |
+    |---|---|
+    | Dashboard | Overview, step guide, quick actions |
+    | Search | Run job searches across multiple boards |
+    | Matched Jobs | Browse jobs that scored ≥70%, grouped by source |
+    | Apply | Work through matched jobs one by one |
+    | Tracker | Update application status (Interview, Accepted, Denied) |
+    | Settings | Configure job titles, matching threshold, profile, resume |
+
+    ---
+
+    ### Tips
+
+    - Run **Search** once a day or every few days to keep listings fresh.
+    - Old jobs (not applied) are automatically deleted after 7 days.
+    - Adjust the **score threshold** in Settings if too many or too few jobs match.
+    - Add companies to the **blacklist** in Settings to automatically skip them.
+    - The **Full pipeline** button on the Dashboard runs all 3 steps (search + score + apply queue) in one go.
+    """)
+
