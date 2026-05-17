@@ -314,12 +314,7 @@ auth.init_auth_db()
 try:
     import extra_streamlit_components as stx
     from datetime import datetime as _dt, timedelta as _td
-
-    @st.cache_resource
-    def _get_cookie_mgr():
-        return stx.CookieManager(key="jobbot_cookies")
-
-    _cookie_mgr = _get_cookie_mgr()
+    _cookie_mgr = stx.CookieManager(key="jobbot_cookies")
     _cookie_available = True
 except Exception:
     _cookie_mgr = None
