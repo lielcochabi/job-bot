@@ -6,8 +6,11 @@ Threshold default: 70 (configurable in config.json as match_threshold).
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Optional
+
+import httpx
 
 import database
 
@@ -405,6 +408,71 @@ def _relevance_bonus(title: str, desc: str) -> int:
 
 
 # ---------------------------------------------------------------------------
+# OpenRouter AI scoring
+# ---------------------------------------------------------------------------
+
+def ai_score_job(job: dict, resume_text: str) -> tuple[float, str]:
+    """
+    Score a job using OpenRouter AI (meta-llama/llama-3.1-8b-instruct:free).
+    Returns (score 0-100, json_string) or (0.0, "") on any error / missing key.
+    """
+    api_key = os.environ.get("OPENROUTER_API_KEY", "")
+    if not api_key:
+        return 0.0, ""
+
+    try:
+        title = job.get("title") or ""
+        desc = job.get("description") or ""
+        job_snippet = f"Title: {title}\n\nDescription:\n{(desc)[:2000]}"
+        resume_snippet = resume_text[:2500]
+
+        prompt = (
+            "You are a job-matching assistant. Given a resume and a job posting, "
+            "evaluate how well the candidate fits the role.\n\n"
+            f"=== RESUME (first 2500 chars) ===\n{resume_snippet}\n\n"
+            f"=== JOB POSTING ===\n{job_snippet}\n\n"
+            "Respond ONLY with valid JSON in this exact format (no extra text):\n"
+            '{"score": <integer 0-100>, "reason": "<one sentence>", "matched_skills": [<list of matched skill strings>]}'
+        )
+
+        response = httpx.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "HTTP-Referer": "https://jobfindingbot.streamlit.app",
+                "X-Title": "Job Bot",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "meta-llama/llama-3.1-8b-instruct:free",
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1,
+                "max_tokens": 250,
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+
+        content = response.json()["choices"][0]["message"]["content"]
+
+        # Extract first {...} block from the response
+        match = re.search(r"\{.*?\}", content, re.DOTALL)
+        if not match:
+            return 0.0, ""
+
+        parsed = json.loads(match.group())
+        score = float(parsed.get("score", 0))
+        result = json.dumps({
+            "reason": parsed.get("reason", ""),
+            "matched_skills": parsed.get("matched_skills", []),
+        }, ensure_ascii=False)
+        return round(min(100.0, max(0.0, score)), 1), result
+
+    except Exception:
+        return 0.0, ""
+
+
+# ---------------------------------------------------------------------------
 # Main scoring function
 # ---------------------------------------------------------------------------
 
@@ -507,12 +575,14 @@ def match_all_unmatched(
     verbose: bool = True,
     skill_weights: Optional[dict[str, int]] = None,
     blacklisted_companies: Optional[list[str]] = None,
+    use_ai: bool = False,
 ) -> dict:
     """Score all unscored jobs in the database. Returns stats dict."""
     jobs = database.get_unmatched_jobs()
     if not jobs:
         return {"processed": 0, "matched": 0, "skipped": 0}
 
+    ai_available = use_ai and bool(os.environ.get("OPENROUTER_API_KEY", ""))
     matched_count = 0
     skipped_count = 0
 
@@ -523,7 +593,14 @@ def match_all_unmatched(
                 f" @ {(job.get('company') or 'Unknown')[:20].encode('ascii','replace').decode()}"
             )
 
-        score, reason = match_job(job, resume_text, threshold, skill_weights, blacklisted_companies)
+        score, reason = 0.0, ""
+        if ai_available:
+            score, reason = ai_score_job(job, resume_text)
+
+        # Fall back to rule-based if AI scoring failed or was not requested
+        if score == 0.0:
+            score, reason = match_job(job, resume_text, threshold, skill_weights, blacklisted_companies)
+
         database.set_match(job["id"], score, reason)
 
         label = "[MATCH]" if score >= threshold else "[skip] "

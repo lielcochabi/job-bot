@@ -374,6 +374,7 @@ def setup():
 @app.command()
 def rematch(
     threshold: float = typer.Option(None, "--threshold", "-t"),
+    ai: bool = typer.Option(False, "--ai", help="Use OpenRouter AI for smarter scoring"),
 ):
     """Reset all job scores and re-run matching with current settings."""
     database.init_db()
@@ -391,9 +392,13 @@ def rematch(
     if not resume_text:
         resume_text = resume_parser.parse_all_resumes(verbose=False)
 
+    if ai:
+        console.print("[cyan]Using AI scoring (OpenRouter Llama 3)...[/cyan]")
+
     result = job_matcher.match_all_unmatched(
         resume_text, threshold=threshold, verbose=True,
-        skill_weights=skill_weights, blacklisted_companies=blacklisted_companies
+        skill_weights=skill_weights, blacklisted_companies=blacklisted_companies,
+        use_ai=ai,
     )
     console.print(
         f"\n[green][OK][/green] Re-scored {result['processed']} jobs — "

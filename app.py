@@ -46,143 +46,218 @@ BOT_DIR = Path(__file__).parent
 
 st.markdown("""
 <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
     /* ── Base ── */
     html, body, [class*="css"] {
         font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
     }
+    .stApp {
+        background: #080d18;
+    }
     .block-container {
-        padding-top: 2rem !important;
+        padding-top: 2.5rem !important;
         padding-bottom: 3rem !important;
-        max-width: 960px;
+        max-width: 980px;
     }
 
     /* ── Sidebar ── */
     [data-testid="stSidebar"] {
-        background: #0d1117;
-        border-right: 1px solid #1e2636;
-        padding: 1.8rem 1.2rem;
+        background: #0a0f1a !important;
+        border-right: 1px solid #161e2e !important;
+        padding: 2rem 1.2rem;
     }
-    [data-testid="stSidebar"] * { color: #c9d1d9 !important; }
-    [data-testid="stSidebar"] hr { border-color: #1e2636; margin: 1rem 0; }
+    [data-testid="stSidebar"] * { color: #8b98b0 !important; }
+    [data-testid="stSidebar"] hr { border-color: #161e2e !important; margin: 1.2rem 0; }
+
+    /* active nav item */
+    [data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked) {
+        color: #e6edf3 !important;
+        background: rgba(79, 142, 247, 0.07) !important;
+        border-radius: 6px !important;
+        border-left: 2px solid #4f8ef7 !important;
+        padding-left: 8px !important;
+    }
 
     /* ── Page header ── */
     .page-title {
-        font-size: 1.4rem; font-weight: 600;
-        color: #e6edf3; margin-bottom: 0.25rem;
-        letter-spacing: -0.02em;
+        font-size: 1.35rem; font-weight: 600;
+        color: #e6edf3; margin-bottom: 0.2rem;
+        letter-spacing: -0.025em;
     }
     .page-sub {
-        font-size: 0.85rem; color: #5c6a82;
-        margin-bottom: 2rem;
+        font-size: 0.82rem; color: #3d5070;
+        margin-bottom: 2rem; letter-spacing: 0.01em;
     }
 
     /* ── Section label ── */
     .section-label {
-        font-size: 0.7rem; font-weight: 600;
-        text-transform: uppercase; letter-spacing: 0.08em;
-        color: #3d4f6b; margin-bottom: 0.75rem;
+        font-size: 0.68rem; font-weight: 600;
+        text-transform: uppercase; letter-spacing: 0.1em;
+        color: #2d3d55; margin-bottom: 0.65rem;
     }
     .section-divider {
-        border: none; border-top: 1px solid #1e2636;
-        margin: 1.75rem 0;
+        border: none; border-top: 1px solid #111827;
+        margin: 2rem 0;
     }
 
-    /* ── Summary row (replaces stat cards) ── */
+    /* ── Summary row ── */
     .summary-row {
-        display: flex; gap: 0; border: 1px solid #1e2636;
-        border-radius: 10px; overflow: hidden; margin-bottom: 2rem;
+        display: flex; gap: 0;
+        border: 1px solid #161e2e;
+        border-radius: 10px; overflow: hidden;
+        margin-bottom: 2.5rem;
+        background: #0c1220;
     }
     .summary-item {
-        flex: 1; padding: 16px 20px;
-        border-right: 1px solid #1e2636;
+        flex: 1; padding: 18px 22px;
+        border-right: 1px solid #161e2e;
+        transition: background 0.15s;
     }
     .summary-item:last-child { border-right: none; }
+    .summary-item:hover { background: #0f1826; }
     .summary-item .num {
-        font-size: 1.5rem; font-weight: 600; color: #e6edf3;
-        line-height: 1;
+        font-size: 1.6rem; font-weight: 600;
+        color: #e6edf3; line-height: 1;
+        letter-spacing: -0.03em;
     }
+    .summary-item .num.accent { color: #4f8ef7; }
+    .summary-item .num.green  { color: #34d399; }
     .summary-item .lbl {
-        font-size: 0.72rem; color: #5c6a82;
-        margin-top: 4px; text-transform: uppercase;
-        letter-spacing: 0.06em;
+        font-size: 0.68rem; color: #3d5070;
+        margin-top: 5px; text-transform: uppercase;
+        letter-spacing: 0.08em;
     }
 
     /* ── Job card ── */
     .job-card {
-        background: #0d1117;
-        border: 1px solid #1e2636;
+        background: #0c1220;
+        border: 1px solid #161e2e;
         border-radius: 10px;
         padding: 18px 22px;
-        margin-bottom: 10px;
+        margin-bottom: 8px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+        transition: border-color 0.15s, box-shadow 0.15s;
     }
-    .job-card:hover { border-color: #2d3f5c; }
+    .job-card:hover {
+        border-color: #2a3a55;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.45);
+    }
     .job-card .job-title {
-        font-size: 0.975rem; font-weight: 600;
-        color: #e6edf3; margin-bottom: 4px;
+        font-size: 0.95rem; font-weight: 600;
+        color: #dde6f0; margin-bottom: 5px;
+        letter-spacing: -0.01em;
     }
     .job-card .job-meta {
-        font-size: 0.8rem; color: #5c6a82; margin-bottom: 10px;
+        font-size: 0.78rem; color: #3d5070;
+        margin-bottom: 10px; letter-spacing: 0.01em;
     }
-    .job-card .score-pill {
+    .score-pill {
         display: inline-block;
-        padding: 2px 10px; border-radius: 4px;
-        font-size: 0.75rem; font-weight: 600;
-        margin-right: 8px;
+        padding: 2px 9px; border-radius: 4px;
+        font-size: 0.72rem; font-weight: 600;
+        letter-spacing: 0.02em;
     }
     .job-card .desc {
-        font-size: 0.8rem; color: #5c6a82;
-        line-height: 1.6; margin-top: 10px;
+        font-size: 0.78rem; color: #3d5070;
+        line-height: 1.65; margin-top: 10px;
     }
     .skill-tag {
         display: inline-block;
-        background: #161d2b; color: #5c6a82;
-        border: 1px solid #1e2636;
+        background: #0f1826; color: #4f6a8a;
+        border: 1px solid #1a2538;
         border-radius: 4px; padding: 1px 8px;
-        font-size: 0.72rem; margin: 2px 2px 0 0;
+        font-size: 0.7rem; margin: 2px 2px 0 0;
+        letter-spacing: 0.02em;
     }
 
     /* ── Status badge ── */
     .status-badge {
         display: inline-block; padding: 2px 8px;
-        border-radius: 4px; font-size: 0.72rem; font-weight: 500;
+        border-radius: 4px; font-size: 0.7rem;
+        font-weight: 500; letter-spacing: 0.02em;
     }
 
     /* ── Buttons ── */
     .stButton > button {
         border-radius: 7px !important;
         font-weight: 500 !important;
-        font-size: 0.85rem !important;
-        padding: 0.4rem 1rem !important;
-        transition: opacity 0.15s !important;
+        font-size: 0.83rem !important;
+        padding: 0.42rem 1.1rem !important;
+        border: 1px solid #1e2c42 !important;
+        background: #0f1826 !important;
+        color: #8b98b0 !important;
+        transition: background 0.15s, border-color 0.15s, color 0.15s !important;
+        box-shadow: none !important;
     }
-    .stButton > button:hover { opacity: 0.85 !important; }
+    .stButton > button:hover {
+        background: #14203a !important;
+        border-color: #2a3d5c !important;
+        color: #c9d8e8 !important;
+    }
+    .stButton > button[kind="primary"] {
+        background: #1a3a6e !important;
+        border-color: #2a52a0 !important;
+        color: #a8c4f0 !important;
+    }
+    .stButton > button[kind="primary"]:hover {
+        background: #1e4280 !important;
+        border-color: #3a62b0 !important;
+        color: #c8daf8 !important;
+    }
 
     /* ── Task output panel ── */
     .task-panel-header {
         display: flex; align-items: center; gap: 8px;
-        padding: 10px 16px;
+        padding: 11px 16px;
         border-left: 2px solid transparent;
-        border-bottom: 1px solid #1e2636;
-        border-radius: 8px 8px 0 0;
-        background: #0d1117;
+        border-bottom: 1px solid #111827;
+        border-radius: 9px 9px 0 0;
+        background: #0c1220;
     }
     .task-panel-header.running { border-left-color: #f59e0b; }
     .task-panel-header.done    { border-left-color: #34d399; }
     .task-panel-header.error   { border-left-color: #f87171; }
     .task-panel-body {
-        padding: 12px 16px;
-        font-family: 'JetBrains Mono', 'Courier New', monospace;
-        font-size: 0.78rem; max-height: 340px; overflow-y: auto;
-        line-height: 1.65; background: #0d1117;
-        border: 1px solid #1e2636; border-top: none;
-        border-radius: 0 0 8px 8px;
+        padding: 14px 18px;
+        font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+        font-size: 0.77rem; max-height: 320px; overflow-y: auto;
+        line-height: 1.7; background: #090e1a;
+        border: 1px solid #111827; border-top: none;
+        border-radius: 0 0 9px 9px;
     }
 
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.25} }
     .running-dot {
-        display: inline-block; width: 7px; height: 7px;
+        display: inline-block; width: 6px; height: 6px;
         border-radius: 50%; background: #f59e0b;
-        animation: pulse 1.4s infinite; margin-right: 6px;
+        animation: pulse 1.6s ease-in-out infinite;
+        margin-right: 7px; flex-shrink: 0;
+    }
+
+    /* ── Inputs ── */
+    [data-testid="stTextInput"] input,
+    [data-testid="stTextArea"] textarea {
+        background: #0c1220 !important;
+        border-color: #161e2e !important;
+        color: #c9d8e8 !important;
+    }
+
+    /* ── Expanders ── */
+    [data-testid="stExpander"] {
+        border: 1px solid #161e2e !important;
+        border-radius: 9px !important;
+        background: #0c1220 !important;
+        margin-bottom: 10px !important;
+    }
+
+    /* ── Auth card glow ── */
+    .auth-wrap {
+        max-width: 440px; margin: 56px auto 0 auto;
+        background: #0c1220; border: 1px solid #161e2e;
+        border-radius: 14px; padding: 40px 36px;
+        box-shadow: 0 0 60px rgba(79, 142, 247, 0.06),
+                    0 8px 32px rgba(0,0,0,0.5);
     }
 
     /* ── Hide Streamlit chrome ── */
@@ -324,13 +399,13 @@ if "username" not in st.session_state:
 
 def show_auth_page():
     st.markdown("""
-    <div style="max-width:420px;margin:48px auto 0 auto;
-                background:#1e293b;border:1px solid #334155;
-                border-radius:16px;padding:36px 32px;">
-        <div style="font-size:1.5rem;font-weight:600;color:#e6edf3;text-align:center;margin-bottom:0.3rem;letter-spacing:-0.02em">
+    <div class="auth-wrap">
+        <div style="font-size:1.3rem;font-weight:600;color:#e6edf3;
+                    text-align:center;margin-bottom:0.25rem;letter-spacing:-0.025em">
             Job Bot
         </div>
-        <div style="font-size:0.85rem;color:#5c6a82;text-align:center;margin-bottom:1.8rem">
+        <div style="font-size:0.8rem;color:#3d5070;text-align:center;
+                    margin-bottom:2rem;letter-spacing:0.01em">
             Automated job search assistant
         </div>
     </div>
@@ -724,11 +799,26 @@ if "Dashboard" in page:
     # Summary row
     st.markdown(f"""
     <div class="summary-row">
-        <div class="summary-item"><div class="num">{stats["total"]}</div><div class="lbl">Found</div></div>
-        <div class="summary-item"><div class="num">{stats["matched"]}</div><div class="lbl">Matched</div></div>
-        <div class="summary-item"><div class="num">{stats["applied"]}</div><div class="lbl">Applied</div></div>
-        <div class="summary-item"><div class="num">{stats["skipped"]}</div><div class="lbl">Skipped</div></div>
-        <div class="summary-item"><div class="num">{stats["avg_score"]}%</div><div class="lbl">Avg score</div></div>
+        <div class="summary-item">
+            <div class="num">{stats["total"]}</div>
+            <div class="lbl">Found</div>
+        </div>
+        <div class="summary-item">
+            <div class="num accent">{stats["matched"]}</div>
+            <div class="lbl">Matched</div>
+        </div>
+        <div class="summary-item">
+            <div class="num green">{stats["applied"]}</div>
+            <div class="lbl">Applied</div>
+        </div>
+        <div class="summary-item">
+            <div class="num">{stats["skipped"]}</div>
+            <div class="lbl">Skipped</div>
+        </div>
+        <div class="summary-item">
+            <div class="num">{stats["avg_score"]}%</div>
+            <div class="lbl">Avg score</div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -744,17 +834,24 @@ if "Dashboard" in page:
 
     # Actions
     st.markdown('<div class="section-label">Actions</div>', unsafe_allow_html=True)
-    col1, col2, col3, col4 = st.columns(4)
+    _has_ai = bool(os.environ.get("OPENROUTER_API_KEY"))
+    col1, col2, col3, col4, col5 = st.columns(5)
     if col1.button("Run full pipeline", use_container_width=True, type="primary"):
         launch_task([PYTHON, "-u", "main.py", "run", "--auto"], "task_run")
-    if col2.button("Re-score all",      use_container_width=True):
-        launch_task([PYTHON, "-u", "main.py", "rematch"], "task_rematch")
-    if col3.button("Refresh",           use_container_width=True):
+    _match_label = "AI Match" if _has_ai else "Re-score all"
+    _match_cmd   = ["rematch", "--ai"] if _has_ai else ["rematch"]
+    if col2.button(_match_label, use_container_width=True):
+        launch_task([PYTHON, "-u", "main.py"] + _match_cmd, "task_rematch")
+    if col3.button("Rule-based match", use_container_width=True):
+        launch_task([PYTHON, "-u", "main.py", "rematch"], "task_rematch2")
+    if col4.button("Refresh", use_container_width=True):
         st.rerun()
-    if col4.button("Clean old jobs",    use_container_width=True):
+    if col5.button("Clean old jobs", use_container_width=True):
         deleted = database.cleanup_old_jobs(days=7)
         st.toast(f"Removed {deleted} jobs older than 7 days.")
         st.rerun()
+    if _has_ai:
+        st.markdown('<div style="font-size:0.72rem;color:#2d3d55;margin-top:4px">AI Match uses OpenRouter (Llama 3) for smarter scoring</div>', unsafe_allow_html=True)
 
     for key, label in [("task_run", "Full Pipeline"), ("task_search", "Search"), ("task_match", "Match"), ("task_rematch", "Re-score")]:
         render_task_panel(key, label)
