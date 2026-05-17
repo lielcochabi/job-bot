@@ -375,7 +375,14 @@ def _handle_google_callback() -> bool:
     return True
 
 
-# Auto-login from cookie (runs once per session)
+# CookieController needs one render cycle before .get() returns values.
+# On fresh page load we trigger a silent rerun so the cookie is readable.
+if "page_loaded" not in st.session_state:
+    st.session_state["page_loaded"] = True
+    if _cookie_available:
+        st.rerun()
+
+# Auto-login from cookie
 if "username" not in st.session_state and _cookie_available:
     try:
         token = _cookie.get("job_bot_auth")
