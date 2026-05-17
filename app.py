@@ -261,6 +261,46 @@ st.markdown("""
 
     /* ── Hide Streamlit chrome ── */
     #MainMenu, footer, header { visibility: hidden; }
+
+    /* ── Kill the rerun dim/flash ── */
+    .stApp, .stApp > *, .main, .stMain,
+    [data-testid="stAppViewContainer"],
+    [data-testid="stAppViewContainer"] > *,
+    [data-stale="true"], [data-stale="true"] > * {
+        opacity: 1 !important;
+        transition: none !important;
+    }
+    [data-testid="stStatusWidget"] { display: none !important; }
+
+    /* ── Step cards ── */
+    .step-row {
+        display: flex; gap: 10px; margin-bottom: 2rem;
+    }
+    .step-card {
+        flex: 1; padding: 16px 18px;
+        background: #0c1220; border: 1px solid #161e2e;
+        border-radius: 10px; cursor: pointer;
+        transition: border-color 0.15s;
+        position: relative;
+    }
+    .step-card:hover { border-color: #2a3a55; }
+    .step-card.active { border-color: #4f8ef7; }
+    .step-card.done   { border-color: #1a3a2a; }
+    .step-card .step-num {
+        font-size: 0.65rem; font-weight: 600; letter-spacing: 0.1em;
+        text-transform: uppercase; margin-bottom: 6px;
+    }
+    .step-card .step-title {
+        font-size: 0.88rem; font-weight: 600; color: #dde6f0;
+        margin-bottom: 3px;
+    }
+    .step-card .step-desc {
+        font-size: 0.74rem; color: #3d5070; line-height: 1.4;
+    }
+    .step-card .step-status {
+        position: absolute; top: 12px; right: 14px;
+        font-size: 0.68rem; font-weight: 500;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -768,10 +808,22 @@ def score_color(score: float) -> str:
 # Sidebar
 # ---------------------------------------------------------------------------
 
-database.init_db()
-# Auto-cleanup jobs older than 7 days (keeps applied jobs forever)
+@st.cache_resource(show_spinner=False)
+def _init_db_once():
+    database.init_db()
+    return True
+
+@st.cache_data(ttl=30, show_spinner=False)
+def _get_stats(username: str) -> dict:
+    return database.get_stats()
+
+@st.cache_data(ttl=120, show_spinner=False)
+def _has_resume_cached(username: str) -> bool:
+    return bool(database.get_resume_content())
+
+_init_db_once()
 database.cleanup_old_jobs(days=7)
-stats = database.get_stats()
+stats = _get_stats(_username)
 
 _PAGES = ["Dashboard", "Search", "Matched Jobs", "Apply", "Tracker", "Settings"]
 
@@ -826,100 +878,111 @@ with st.sidebar:
 
 if "Dashboard" in page:
     st.markdown('<div class="page-title">Dashboard</div>', unsafe_allow_html=True)
-    st.markdown('<div class="page-sub">Overview of your job search pipeline.</div>', unsafe_allow_html=True)
 
     if _is_guest:
-        st.info("You're browsing as a guest. Log in to search jobs, run the pipeline, and track applications.")
+        st.info("You're browsing as a guest. Log in to use all features.")
 
-    # Summary row
+    _has_resume  = _has_resume_cached(_username)
+    _has_jobs    = stats["total"] > 0
+    _has_matches = stats["matched"] > 0
+    _has_ai      = bool(os.environ.get("OPENROUTER_API_KEY"))
+
+    if not _has_resume:   _active = 0
+    elif not _has_jobs:   _active = 1
+    elif not _has_matches: _active = 2
+    else:                  _active = 3
+
+    def _step(i):
+        if i < _active:  return "done",   "#34d399", "Done"
+        if i == _active: return "active",  "#4f8ef7", "Up next"
+        return "",         "#2d3d55",      ""
+
+    s0,c0,l0 = _step(0); s1,c1,l1 = _step(1)
+    s2,c2,l2 = _step(2); s3,c3,l3 = _step(3)
+
     st.markdown(f"""
-    <div class="summary-row">
-        <div class="summary-item">
-            <div class="num">{stats["total"]}</div>
-            <div class="lbl">Found</div>
-        </div>
-        <div class="summary-item">
-            <div class="num accent">{stats["matched"]}</div>
-            <div class="lbl">Matched</div>
-        </div>
-        <div class="summary-item">
-            <div class="num green">{stats["applied"]}</div>
-            <div class="lbl">Applied</div>
-        </div>
-        <div class="summary-item">
-            <div class="num">{stats["skipped"]}</div>
-            <div class="lbl">Skipped</div>
-        </div>
-        <div class="summary-item">
-            <div class="num">{stats["avg_score"]}%</div>
-            <div class="lbl">Avg score</div>
-        </div>
+    <div class="step-row">
+      <div class="step-card {s0}">
+        <div class="step-num" style="color:{c0}">Step 1</div>
+        <div class="step-title">Upload resume</div>
+        <div class="step-desc">Settings → Resume. Needed for scoring.</div>
+        <span class="step-status" style="color:{c0}">{l0}</span>
+      </div>
+      <div class="step-card {s1}">
+        <div class="step-num" style="color:{c1}">Step 2</div>
+        <div class="step-title">Search jobs</div>
+        <div class="step-desc">Scan 8 job boards for new listings.</div>
+        <span class="step-status" style="color:{c1}">{l1}</span>
+      </div>
+      <div class="step-card {s2}">
+        <div class="step-num" style="color:{c2}">Step 3</div>
+        <div class="step-title">Score matches</div>
+        <div class="step-desc">{"AI scoring (Llama 3)." if _has_ai else "Rule-based scoring against your profile."}</div>
+        <span class="step-status" style="color:{c2}">{l2}</span>
+      </div>
+      <div class="step-card {s3}">
+        <div class="step-num" style="color:{c3}">Step 4</div>
+        <div class="step-title">Apply</div>
+        <div class="step-desc">Review matched jobs and send applications.</div>
+        <span class="step-status" style="color:{c3}">{l3}</span>
+      </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # Navigation
-    st.markdown('<div class="section-label">Go to</div>', unsafe_allow_html=True)
-    nav1, nav2, nav3, nav4 = st.columns(4)
-    if nav1.button("Search",       use_container_width=True): _go("Search")
-    if nav2.button("Matched Jobs", use_container_width=True): _go("Matched")
-    if nav3.button("Apply",        use_container_width=True): _go("Apply")
-    if nav4.button("Tracker",      use_container_width=True): _go("Tracker")
+    st.markdown(f"""
+    <div class="summary-row">
+      <div class="summary-item"><div class="num">{stats["total"]}</div><div class="lbl">Found</div></div>
+      <div class="summary-item"><div class="num accent">{stats["matched"]}</div><div class="lbl">Matched</div></div>
+      <div class="summary-item"><div class="num green">{stats["applied"]}</div><div class="lbl">Applied</div></div>
+      <div class="summary-item"><div class="num">{stats["skipped"]}</div><div class="lbl">Skipped</div></div>
+      <div class="summary-item"><div class="num">{stats["avg_score"]}%</div><div class="lbl">Avg score</div></div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+    if not _has_resume:
+        st.markdown(
+            '<div style="font-size:0.8rem;color:#3d5070;margin:-12px 0 18px">'
+            'Start by uploading your resume in '
+            '<b style="color:#4f8ef7;cursor:pointer">Settings → Resume</b>'
+            '</div>', unsafe_allow_html=True)
 
-    # Actions
-    st.markdown('<div class="section-label">Actions</div>', unsafe_allow_html=True)
-    _has_ai = bool(os.environ.get("OPENROUTER_API_KEY"))
-    col1, col2, col3, col4, col5 = st.columns(5)
-    _has_resume = bool(database.get_resume_content())
-    if col1.button("Run full pipeline", use_container_width=True, type="primary"):
+    col1, col2, col3, col4 = st.columns(4)
+    if col1.button("Search jobs",    use_container_width=True,
+                   type="primary" if _active == 1 else "secondary"): _go("Search")
+    _mlabel = "Score with AI" if _has_ai else "Score matches"
+    _mcmd   = ["rematch", "--ai"] if _has_ai else ["rematch"]
+    if col2.button(_mlabel, use_container_width=True,
+                   type="primary" if _active == 2 else "secondary",
+                   disabled=not _has_jobs):
         if not _has_resume:
-            st.warning("Upload your resume in **Settings → Resume** before running the pipeline.")
+            st.warning("Upload your resume in Settings first.")
         else:
-            launch_task([PYTHON, "-u", "main.py", "run", "--auto"], "task_run")
-    _match_label = "AI Match" if _has_ai else "Re-score all"
-    _match_cmd   = ["rematch", "--ai"] if _has_ai else ["rematch"]
-    if col2.button(_match_label, use_container_width=True):
-        launch_task([PYTHON, "-u", "main.py"] + _match_cmd, "task_rematch")
-    if col3.button("Rule-based match", use_container_width=True):
-        launch_task([PYTHON, "-u", "main.py", "rematch"], "task_rematch2")
-    if col4.button("Refresh", use_container_width=True):
-        st.rerun()
-    if col5.button("Clean old jobs", use_container_width=True):
-        deleted = database.cleanup_old_jobs(days=7)
-        st.toast(f"Removed {deleted} jobs older than 7 days.")
-        st.rerun()
-    if _has_ai:
-        st.markdown('<div style="font-size:0.72rem;color:#2d3d55;margin-top:4px">AI Match uses OpenRouter (Llama 3) for smarter scoring</div>', unsafe_allow_html=True)
+            launch_task([PYTHON, "-u", "main.py"] + _mcmd, "task_rematch")
+    if col3.button("Review matches", use_container_width=True,
+                   type="primary" if _active == 3 else "secondary",
+                   disabled=not _has_matches): _go("Matched")
+    if col4.button("Full pipeline",  use_container_width=True, disabled=not _has_resume):
+        launch_task([PYTHON, "-u", "main.py", "run", "--auto"], "task_run")
 
-    for key, label in [("task_run", "Full Pipeline"), ("task_search", "Search"), ("task_match", "Match"), ("task_rematch", "Re-score"), ("task_rematch2", "Rule-based Match")]:
+    for key, label in [("task_run","Full Pipeline"),("task_rematch","Score"),
+                        ("task_rematch2","Match"),("task_search","Search"),("task_match","Match")]:
         live_task_panel(key, label)
 
-    # Recent matches
-    st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
-    st.markdown('<div class="section-label">Recent matches</div>', unsafe_allow_html=True)
-
-    matched = database.get_jobs_by_status("matched")[:5]
-    if matched:
-        for job in matched:
+    if _has_matches:
+        st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+        st.markdown('<div class="section-label">Recent matches</div>', unsafe_allow_html=True)
+        for job in database.get_jobs_by_status("matched")[:5]:
             score   = job.get("match_score") or 0
             title   = (job.get("title")   or "Unknown")[:60]
             company = (job.get("company") or "Unknown")[:30]
             url     = job.get("url") or ""
-            col1, col2, col3 = st.columns([5, 1, 1])
-            col1.markdown(
-                f'<div style="font-size:0.875rem;color:#e6edf3">{title}</div>'
-                f'<div style="font-size:0.78rem;color:#5c6a82">{company}</div>',
-                unsafe_allow_html=True,
-            )
-            col2.markdown(
-                f'<div style="font-size:0.875rem;color:{score_color(score)};padding-top:4px">{score:.0f}%</div>',
-                unsafe_allow_html=True,
-            )
-            if url:
-                col3.link_button("Open", url, use_container_width=True)
-    else:
-        st.markdown('<div style="font-size:0.85rem;color:#3d4f6b">No matched jobs yet. Run a search to get started.</div>', unsafe_allow_html=True)
+            c1, c2, c3 = st.columns([5, 1, 1])
+            c1.markdown(f'<div style="font-size:0.875rem;color:#dde6f0">{title}</div>'
+                        f'<div style="font-size:0.75rem;color:#3d5070">{company}</div>',
+                        unsafe_allow_html=True)
+            c2.markdown(f'<div style="color:{score_color(score)};font-size:0.85rem;padding-top:4px">{score:.0f}%</div>',
+                        unsafe_allow_html=True)
+            if url: c3.link_button("Open", url, use_container_width=True)
 
 
 # ---------------------------------------------------------------------------
