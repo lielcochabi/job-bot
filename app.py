@@ -312,22 +312,30 @@ st.markdown("""
 auth.init_auth_db()
 
 try:
-    from streamlit_cookies_controller import CookieController
-    _cookie = CookieController()
+    import extra_streamlit_components as stx
+    from datetime import datetime as _dt, timedelta as _td
+
+    @st.cache_resource
+    def _get_cookie_mgr():
+        return stx.CookieManager(key="jobbot_cookies")
+
+    _cookie_mgr = _get_cookie_mgr()
     _cookie_available = True
 except Exception:
-    _cookie = None
+    _cookie_mgr = None
     _cookie_available = False
 
 
 def _do_login(username: str, remember: bool):
-    """Set session state and optionally a persistent cookie."""
     token = auth.create_token(username, days=30 if remember else 1)
     st.session_state["username"]   = username
     st.session_state["auth_token"] = token
     if remember and _cookie_available:
         try:
-            _cookie.set("job_bot_auth", token, max_age=30 * 24 * 3600)
+            _cookie_mgr.set(
+                "job_bot_auth", token,
+                expires_at=_dt.now() + _td(days=30),
+            )
         except Exception:
             pass
 
@@ -336,10 +344,10 @@ def _do_logout():
     auth.revoke_token(st.session_state.get("auth_token", ""))
     if _cookie_available:
         try:
-            _cookie.remove("job_bot_auth")
+            _cookie_mgr.delete("job_bot_auth")
         except Exception:
             pass
-    for k in ["username", "auth_token"]:
+    for k in ["username", "auth_token", "page_loaded"]:
         st.session_state.pop(k, None)
 
 
@@ -415,17 +423,10 @@ def _handle_google_callback() -> bool:
     return True
 
 
-# CookieController needs one render cycle before .get() returns values.
-# On fresh page load we trigger a silent rerun so the cookie is readable.
-if "page_loaded" not in st.session_state:
-    st.session_state["page_loaded"] = True
-    if _cookie_available:
-        st.rerun()
-
 # Auto-login from cookie
 if "username" not in st.session_state and _cookie_available:
     try:
-        token = _cookie.get("job_bot_auth")
+        token = _cookie_mgr.get("job_bot_auth")
         if token:
             uname = auth.validate_token(token)
             if uname:
