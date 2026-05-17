@@ -703,12 +703,16 @@ def render_task_panel(task_key: str, title: str) -> bool:
             unsafe_allow_html=True,
         )
 
-    # ── Auto-refresh while running ──────────────────────────────────────────
-    if running:
-        time.sleep(0.8)
-        st.rerun()
-
     return running
+
+
+# ---------------------------------------------------------------------------
+# Live task panel — only this fragment reruns, not the whole page
+# ---------------------------------------------------------------------------
+
+@st.fragment(run_every=1)
+def live_task_panel(task_key: str, title: str):
+    render_task_panel(task_key, title)
 
 
 # ---------------------------------------------------------------------------
@@ -853,8 +857,8 @@ if "Dashboard" in page:
     if _has_ai:
         st.markdown('<div style="font-size:0.72rem;color:#2d3d55;margin-top:4px">AI Match uses OpenRouter (Llama 3) for smarter scoring</div>', unsafe_allow_html=True)
 
-    for key, label in [("task_run", "Full Pipeline"), ("task_search", "Search"), ("task_match", "Match"), ("task_rematch", "Re-score")]:
-        render_task_panel(key, label)
+    for key, label in [("task_run", "Full Pipeline"), ("task_search", "Search"), ("task_match", "Match"), ("task_rematch", "Re-score"), ("task_rematch2", "Rule-based Match")]:
+        live_task_panel(key, label)
 
     # Recent matches
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
@@ -943,7 +947,8 @@ elif "Search" in page:
             cmd.append("--remote")
         launch_task(cmd, "task_search")
 
-    task_still_running = render_task_panel("task_search", "Search")
+    live_task_panel("task_search", "Search")
+    task_still_running = bool(st.session_state.get("task_search", {}).get("visible"))
 
     if not task_still_running and st.session_state.get("task_search"):
         state = st.session_state.get("task_search", {})
