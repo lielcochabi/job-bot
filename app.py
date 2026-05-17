@@ -219,10 +219,9 @@ st.markdown("""
     .task-panel-header.done    { border-left-color: #34d399; }
     .task-panel-header.error   { border-left-color: #f87171; }
     .task-panel-body {
-        padding: 14px 18px;
-        font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
-        font-size: 0.77rem; max-height: 320px; overflow-y: auto;
-        line-height: 1.7; background: #090e1a;
+        padding: 6px 4px;
+        max-height: 340px; overflow-y: auto;
+        background: #090e1a;
         border: 1px solid #111827; border-top: none;
         border-radius: 0 0 9px 9px;
     }
@@ -588,26 +587,50 @@ def stop_task(task_key: str, status_path: Path):
 
 _ANSI_RE = re.compile(r'\x1b\[[0-9;]*[mGKHFABCDJn]|\r')
 
-def _colorize(line: str) -> str:
-    """Strip ANSI codes then wrap the line in a color span based on content."""
-    line = _ANSI_RE.sub("", line).strip()
+def _format_log_line(raw: str) -> str:
+    """Strip ANSI, classify the line, return a styled HTML row."""
+    line = _ANSI_RE.sub("", raw).strip()
     if not line:
         return ""
+
     esc = line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    lo = line.lower()
-    if any(k in lo for k in ("[match]", "✓", "complete", "success", "done", "applied")):
-        return f'<span style="color:#34d399">{esc}</span>'
-    if any(k in lo for k in ("error", "fail", "❌", "exception", "traceback")):
-        return f'<span style="color:#f87171">{esc}</span>'
-    if any(k in lo for k in ("skip", "busy", "retry", "rate")):
-        return f'<span style="color:#64748b">{esc}</span>'
-    if any(k in lo for k in ("searching", "source", "fetching", "🔍")):
-        return f'<span style="color:#60a5fa">{esc}</span>'
-    if any(k in lo for k in ("match", "score", "🎯", "found")):
-        return f'<span style="color:#c084fc">{esc}</span>'
-    if any(k in lo for k in ("warn", "⚠", "skip")):
-        return f'<span style="color:#fbbf24">{esc}</span>'
-    return f'<span style="color:#94a3b8">{esc}</span>'
+    lo  = line.lower()
+
+    # Classify
+    if any(k in lo for k in ("error", "fail", "exception", "traceback", "exit 1")):
+        dot   = '#f87171'
+        color = '#f87171'
+        bg    = 'rgba(248,113,113,0.06)'
+    elif any(k in lo for k in ("[ok]", "done", "complete", "success", "added", "matched", "applied")):
+        dot   = '#34d399'
+        color = '#c8efe2'
+        bg    = 'rgba(52,211,153,0.05)'
+    elif any(k in lo for k in ("searching", "loading", "phase", "────", "──")):
+        dot   = '#4f8ef7'
+        color = '#7fb3f7'
+        bg    = 'rgba(79,142,247,0.05)'
+    elif any(k in lo for k in ("found", "jobs found", "score", "reset", "skipped")):
+        dot   = '#a78bfa'
+        color = '#c4b5fd'
+        bg    = 'rgba(167,139,250,0.05)'
+    elif any(k in lo for k in ("warn", "skipping", "busy", "rate limit", "retry")):
+        dot   = '#f59e0b'
+        color = '#fcd34d'
+        bg    = 'rgba(245,158,11,0.05)'
+    else:
+        dot   = '#2d3d55'
+        color = '#4f6a8a'
+        bg    = 'transparent'
+
+    return (
+        f'<div style="display:flex;align-items:baseline;gap:10px;padding:5px 0;'
+        f'background:{bg};border-radius:5px;margin:1px 0;padding-left:10px">'
+        f'<span style="width:5px;height:5px;border-radius:50%;background:{dot};'
+        f'flex-shrink:0;margin-top:5px;display:inline-block"></span>'
+        f'<span style="color:{color};font-size:0.78rem;line-height:1.5;'
+        f'font-family:ui-monospace,\'SF Mono\',Menlo,monospace;word-break:break-all">{esc}</span>'
+        f'</div>'
+    )
 
 
 def render_task_panel(task_key: str, title: str) -> bool:
@@ -691,15 +714,16 @@ def render_task_panel(task_key: str, title: str) -> bool:
 
     # ── Output box ──────────────────────────────────────────────────────────
     if not lines:
-        placeholder = '<span style="color:#475569;font-style:italic">Starting process…</span>'
         st.markdown(
-            f'<div class="task-panel-body">{placeholder}</div>',
+            '<div class="task-panel-body">'
+            '<span style="color:#2d3d55;font-size:0.78rem;font-style:italic">Starting…</span>'
+            '</div>',
             unsafe_allow_html=True,
         )
     else:
-        colored = "<br>".join(_colorize(l) for l in lines[-100:])
+        rows = "".join(_format_log_line(l) for l in lines[-120:] if l.strip())
         st.markdown(
-            f'<div class="task-panel-body">{colored}</div>',
+            f'<div class="task-panel-body" style="padding:8px 12px">{rows}</div>',
             unsafe_allow_html=True,
         )
 
