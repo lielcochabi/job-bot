@@ -133,14 +133,11 @@ def match(
     skill_weights = cfg.get("skill_weights", None)
     blacklisted_companies = cfg.get("blacklisted_companies", [])
 
-    # Parse resumes (or use cached)
+    # Load resume from database
     console.print("[bold]Loading resume...[/bold]")
-    try:
-        resume_text = database.get_resume_content()
-        if not resume_text:
-            resume_text = resume_parser.parse_all_resumes(verbose=True)
-    except Exception as e:
-        console.print(f"[red]Resume error:[/red] {e}")
+    resume_text = database.get_resume_content()
+    if not resume_text:
+        console.print("[red]No resume found. Upload your resume in Settings → Resume first.[/red]")
         raise typer.Exit(1)
 
     unmatched = database.get_unmatched_jobs()
@@ -188,15 +185,15 @@ def apply(
 
     # Load resume text + extract profile
     console.print("[bold]Extracting profile from resume...[/bold]")
+    resume_text = database.get_resume_content()
+    if not resume_text:
+        console.print("[red]No resume found. Upload your resume in Settings → Resume first.[/red]")
+        raise typer.Exit(1)
     try:
-        resume_text = database.get_resume_content()
-        if not resume_text:
-            resume_text = resume_parser.parse_all_resumes(verbose=False)
         profile = resume_parser.extract_resume_profile(resume_text)
-        # Merge config profile fields
         profile.update({k: v for k, v in cfg.get("profile", {}).items() if v})
     except Exception as e:
-        console.print(f"[red]Error loading resume:[/red] {e}")
+        console.print(f"[red]Error reading resume:[/red] {e}")
         raise typer.Exit(1)
 
     matched = database.get_jobs_by_status("matched")

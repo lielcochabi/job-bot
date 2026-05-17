@@ -840,8 +840,12 @@ if "Dashboard" in page:
     st.markdown('<div class="section-label">Actions</div>', unsafe_allow_html=True)
     _has_ai = bool(os.environ.get("OPENROUTER_API_KEY"))
     col1, col2, col3, col4, col5 = st.columns(5)
+    _has_resume = bool(database.get_resume_content())
     if col1.button("Run full pipeline", use_container_width=True, type="primary"):
-        launch_task([PYTHON, "-u", "main.py", "run", "--auto"], "task_run")
+        if not _has_resume:
+            st.warning("Upload your resume in **Settings → Resume** before running the pipeline.")
+        else:
+            launch_task([PYTHON, "-u", "main.py", "run", "--auto"], "task_run")
     _match_label = "AI Match" if _has_ai else "Re-score all"
     _match_cmd   = ["rematch", "--ai"] if _has_ai else ["rematch"]
     if col2.button(_match_label, use_container_width=True):
