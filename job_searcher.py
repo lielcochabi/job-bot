@@ -14,6 +14,8 @@ import json
 import os
 import re
 import time
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Generator
 
 import httpx
@@ -96,7 +98,7 @@ def search_remoteok(queries: list[str]) -> Generator[dict, None, None]:
             raise
         except Exception as e:
             print(f"  [RemoteOK] Error for '{query}': {e}")
-        time.sleep(1)
+        time.sleep(0.3)
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +110,7 @@ def search_arbeitnow(queries: list[str]) -> Generator[dict, None, None]:
     seen: set[str] = set()
     for query in queries:
         page = 1
-        while page <= 3:
+        while page <= 2:
             url = "https://www.arbeitnow.com/api/job-board-api"
             try:
                 resp = httpx.get(
@@ -144,7 +146,7 @@ def search_arbeitnow(queries: list[str]) -> Generator[dict, None, None]:
                         "description": desc,
                     }
                 page += 1
-                time.sleep(2)  # be polite to avoid rate limiting
+                time.sleep(0.5)
             except httpx.HTTPStatusError as e:
                 if e.response.status_code in (403, 429):
                     raise RateLimited("Arbeitnow")
@@ -184,7 +186,7 @@ def search_themuse(queries: list[str]) -> Generator[dict, None, None]:
                 break
 
         page = 1
-        while page <= 3:
+        while page <= 2:
             params: dict = {"page": page, "descending": "true"}
             if category:
                 params["category"] = category
@@ -223,7 +225,7 @@ def search_themuse(queries: list[str]) -> Generator[dict, None, None]:
                         "description": description,
                     }
                 page += 1
-                time.sleep(0.5)
+                time.sleep(0.2)
             except Exception as e:
                 print(f"  [TheMuse] Error for '{query}' page {page}: {e}")
                 break
@@ -278,7 +280,7 @@ def search_adzuna(queries: list[str], country: str = "us") -> Generator[dict, No
                         "url": jurl,
                         "description": item.get("description", ""),
                     }
-                time.sleep(0.5)
+                time.sleep(0.3)
             except Exception as e:
                 print(f"  [Adzuna] Error for '{query}' page {page}: {e}")
                 break
@@ -313,7 +315,7 @@ def search_hn_hiring(queries: list[str]) -> Generator[dict, None, None]:
             timeout=15,
         )
         kids_resp.raise_for_status()
-        kids = kids_resp.json().get("kids", [])[:100]
+        kids = kids_resp.json().get("kids", [])[:50]
 
         for kid_id in kids:
             try:
@@ -344,7 +346,6 @@ def search_hn_hiring(queries: list[str]) -> Generator[dict, None, None]:
                     "url": f"https://news.ycombinator.com/item?id={kid_id}",
                     "description": plain[:3000],
                 }
-                time.sleep(0.1)
             except Exception:
                 continue
     except Exception as e:
@@ -393,7 +394,7 @@ def search_remotive(queries: list[str]) -> Generator[dict, None, None]:
             raise
         except Exception as e:
             print(f"  [Remotive] Error for '{query}': {e}")
-        time.sleep(1)
+        time.sleep(0.3)
 
 
 # ---------------------------------------------------------------------------
@@ -438,7 +439,7 @@ def search_jobicy(queries: list[str]) -> Generator[dict, None, None]:
             raise
         except Exception as e:
             print(f"  [Jobicy] Error for '{query}': {e}")
-        time.sleep(1)
+        time.sleep(0.3)
 
 
 # ---------------------------------------------------------------------------
@@ -503,7 +504,7 @@ def search_weworkremotely(queries: list[str]) -> Generator[dict, None, None]:
                 }
         except Exception as e:
             print(f"  [WeWorkRemotely] Error: {e}")
-        time.sleep(1)
+        time.sleep(0.3)
 
 
 # ---------------------------------------------------------------------------
@@ -547,7 +548,7 @@ def search_workingnomads(queries: list[str]) -> Generator[dict, None, None]:
                 }
         except Exception as e:
             print(f"  [WorkingNomads] Error for '{category}': {e}")
-        time.sleep(1)
+        time.sleep(0.3)
 
 
 # ---------------------------------------------------------------------------
@@ -602,7 +603,7 @@ def search_himalayas(queries: list[str]) -> Generator[dict, None, None]:
             raise
         except Exception as e:
             print(f"  [Himalayas] Error for '{query}': {e}")
-        time.sleep(1)
+        time.sleep(0.3)
 
 
 # ---------------------------------------------------------------------------
@@ -689,7 +690,7 @@ def search_drushim(queries: list[str]) -> Generator[dict, None, None]:
                         "description": f"{title} at {company}. Location: {location}. Apply at {full_url}",
                     }
 
-                time.sleep(1.5)
+                time.sleep(0.5)
             except httpx.HTTPStatusError as e:
                 if e.response.status_code in (403, 429):
                     raise RateLimited("Drushim")
@@ -717,70 +718,64 @@ def search_all_sources(
     remote_only: bool = False,
 ) -> list[dict]:
     """
-    Search all enabled sources and return de-duplicated job listings.
-    If a source is rate-limited it is moved to the back of the queue
-    and retried once after all other sources finish (with a 30s wait).
+    Search all enabled sources in parallel and return de-duplicated job listings.
+    Sources run concurrently — total time ≈ slowest single source, not sum of all.
     """
-    all_sources = ["remoteok", "arbeitnow", "themuse", "adzuna", "hn", "remotive", "jobicy",
-                   "workingnomads", "himalayas", "drushim"]
+    all_sources = ["remoteok", "arbeitnow", "themuse", "adzuna", "hn", "remotive",
+                   "jobicy", "workingnomads", "himalayas", "drushim"]
     enabled = set(s.lower() for s in (sources or all_sources))
 
-    jobs: list[dict] = []
-    seen_urls: set[str] = set()
-
-    def add(gen):
-        for job in gen:
-            url = job.get("url", "")
-            if url and url not in seen_urls:
-                seen_urls.add(url)
-                jobs.append(job)
-
-    # Map name -> (label, function, extra_check)
     source_map = {
-        "remoteok":       ("RemoteOK",          lambda: search_remoteok(queries),       True),
-        "arbeitnow":      ("Arbeitnow",          lambda: search_arbeitnow(queries),      True),
-        "themuse":        ("The Muse",           lambda: search_themuse(queries),        True),
-        "adzuna":         ("Adzuna",             lambda: search_adzuna(queries),         bool(os.environ.get("ADZUNA_APP_ID"))),
-        "hn":             ("HN Who's Hiring",    lambda: search_hn_hiring(queries),      True),
-        "remotive":       ("Remotive",           lambda: search_remotive(queries),       True),
-        "jobicy":         ("Jobicy",             lambda: search_jobicy(queries),         True),
-        "workingnomads":  ("Working Nomads",     lambda: search_workingnomads(queries),  True),
-        "himalayas":      ("Himalayas",          lambda: search_himalayas(queries),      True),
-        "drushim":        ("Drushim (IL)",       lambda: search_drushim(queries),        True),
+        "remoteok":      ("RemoteOK",         lambda: list(search_remoteok(queries)),       True),
+        "arbeitnow":     ("Arbeitnow",         lambda: list(search_arbeitnow(queries)),      True),
+        "themuse":       ("The Muse",          lambda: list(search_themuse(queries)),        True),
+        "adzuna":        ("Adzuna",            lambda: list(search_adzuna(queries)),         bool(os.environ.get("ADZUNA_APP_ID"))),
+        "hn":            ("HN Who's Hiring",   lambda: list(search_hn_hiring(queries)),      True),
+        "remotive":      ("Remotive",          lambda: list(search_remotive(queries)),       True),
+        "jobicy":        ("Jobicy",            lambda: list(search_jobicy(queries)),         True),
+        "workingnomads": ("Working Nomads",    lambda: list(search_workingnomads(queries)),  True),
+        "himalayas":     ("Himalayas",         lambda: list(search_himalayas(queries)),      True),
+        "drushim":       ("Drushim (IL)",      lambda: list(search_drushim(queries)),        True),
     }
 
-    # Build ordered queue of sources to run
-    queue = [name for name in all_sources if name in enabled]
-    retried: set[str] = set()
+    queue = [n for n in all_sources if n in enabled and source_map[n][2]]
 
-    while queue:
-        name = queue.pop(0)
-        label, fn, check = source_map[name]
+    results_lock = threading.Lock()
+    all_jobs: list[dict] = []
 
-        if not check:
-            print(f"  Skipping {label} (no API key in .env)")
-            continue
-
-        is_retry = name in retried
-        print(f"  Searching {label}{'  [retry]' if is_retry else ''}...")
-
+    def run_source(name: str) -> tuple[str, list[dict]]:
+        label, fn, _ = source_map[name]
+        print(f"  Searching {label}...")
         try:
-            add(fn())
+            jobs = fn()
+            print(f"  [{label}] {len(jobs)} jobs found")
+            return name, jobs
         except RateLimited:
-            if not is_retry:
-                print(f"  [{label}] Busy — will retry after other sources...")
-                retried.add(name)
-                queue.append(name)
-                time.sleep(2)
-            else:
-                print(f"  [{label}] Skipped.")
+            print(f"  [{label}] Rate limited — skipping")
+            return name, []
         except Exception as e:
-            print(f"  [{label}] Skipped.")
+            print(f"  [{label}] Error: {e}")
+            return name, []
 
-        # If we just finished the main sources and retries are next, wait a bit
-        if queue and queue[0] in retried and len([q for q in queue if q not in retried]) == 0:
-            print(f"  Waiting 30s before retrying rate-limited sources...")
-            time.sleep(30)
+    # Run all sources concurrently — max 6 threads to avoid overwhelming the network
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        futures = {executor.submit(run_source, name): name for name in queue}
+        for future in as_completed(futures, timeout=180):
+            try:
+                _, jobs = future.result()
+                with results_lock:
+                    all_jobs.extend(jobs)
+            except Exception as e:
+                print(f"  Source error: {e}")
+
+    # Deduplicate by URL
+    seen_urls: set[str] = set()
+    jobs: list[dict] = []
+    for job in all_jobs:
+        url = job.get("url", "")
+        if url and url not in seen_urls:
+            seen_urls.add(url)
+            jobs.append(job)
 
     if remote_only:
         keywords = {"remote", "anywhere", "worldwide", "distributed", "wfh"}
