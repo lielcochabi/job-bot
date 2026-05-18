@@ -3,13 +3,16 @@
     "Backend Developer",
     "Backend Engineer",
     "Python Developer",
+    "Python Engineer",
+    "Flask Developer",
+    "Django Developer",
+    "FastAPI Developer",
+    "API Developer",
+    "API Engineer",
     "Node.js Developer",
     "Java Developer",
     "Go Developer",
     "Rust Developer",
-    "API Developer",
-    "FastAPI Developer",
-    "Django Developer",
     "Spring Boot Developer"
   ],
   "Frontend Development": [
@@ -24,15 +27,17 @@
   ],
   "Full Stack": [
     "Full Stack Developer",
+    "Fullstack Developer",
     "Full Stack Engineer",
+    "Fullstack Engineer",
     "Web Developer",
     "Web Application Developer"
   ],
   "DevOps & Cloud": [
     "DevOps Engineer",
     "Cloud Engineer",
-    "Site Reliability Engineer",
     "Platform Engineer",
+    "Site Reliability Engineer",
     "Infrastructure Engineer",
     "Kubernetes Engineer",
     "AWS Engineer",
@@ -72,6 +77,7 @@
     "Game Developer",
     "Game Engineer",
     "Unity Developer",
+    "Unreal Developer",
     "Unreal Engine Developer",
     "Gameplay Engineer",
     "VR Developer",
@@ -100,6 +106,10 @@
   "Software Engineering (General)": [
     "Software Engineer",
     "Software Developer",
+    "Junior Software Engineer",
+    "Junior Backend Developer",
+    "Junior Python Developer",
+    "Entry Level Software Engineer",
     "Software Architect",
     "Solutions Architect",
     "R&D Engineer",
@@ -140,12 +150,18 @@
   ],
   "Internships & Junior": [
     "Software Engineering Intern",
+    "Software Developer Intern",
     "Backend Intern",
+    "Python Intern",
     "Frontend Intern",
     "Data Science Intern",
     "Junior Developer",
     "Junior Software Engineer",
     "Working Student Developer",
+    "Working Student Software Engineer",
+    "Werkstudent Software Engineer",
+    "Werkstudent Backend",
+    "Werkstudent Python",
     "Graduate Software Engineer"
   ]
 }
