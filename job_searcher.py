@@ -691,6 +691,9 @@ def search_indeed_israel(queries: list[str]) -> Generator[dict, None, None]:
         url = f"https://il.indeed.com/rss?q={q_enc}&l=Israel&sort=date&fromage=30"
         try:
             resp = httpx.get(url, headers=HEADERS, timeout=15)
+            if resp.status_code in (403, 429):
+                # Indeed blocks scrapers — stop immediately instead of spamming errors
+                raise RateLimited("Indeed IL")
             resp.raise_for_status()
             root = ET.fromstring(resp.content)
 
@@ -728,6 +731,8 @@ def search_indeed_israel(queries: list[str]) -> Generator[dict, None, None]:
                     "url":         jurl,
                     "description": desc,
                 }
+        except RateLimited:
+            raise   # propagates up → prints once and skips all remaining queries
         except Exception as e:
             print(f"  [Indeed IL] Error for '{query}': {e}")
         time.sleep(0.4)

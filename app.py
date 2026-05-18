@@ -810,6 +810,43 @@ def score_color(score: float) -> str:
     return "#5c6a82"
 
 
+def _ai_cover_letter(job: dict, resume_text: str) -> str:
+    """Generate a tailored cover letter using OpenRouter (free Llama 3 model)."""
+    api_key = os.environ.get("OPENROUTER_API_KEY", "")
+    if not api_key:
+        return ""
+    title   = job.get("title", "this role")
+    company = job.get("company", "your company")
+    desc    = (job.get("description") or "")[:1500]
+    prompt  = (
+        f"Write a concise, professional cover letter for this job application.\n\n"
+        f"Resume (key highlights):\n{resume_text[:2000]}\n\n"
+        f"Job: {title} at {company}\n"
+        f"Description: {desc}\n\n"
+        f"Instructions:\n"
+        f"- 3 short paragraphs, under 220 words total\n"
+        f"- Start directly (no 'Dear Hiring Manager' header)\n"
+        f"- Para 1: enthusiasm + specific role/company\n"
+        f"- Para 2: 2-3 most relevant skills from the resume\n"
+        f"- Para 3: call to action\n"
+        f"- Tone: confident, human, not generic"
+    )
+    try:
+        import httpx as _hx
+        r = _hx.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={"model": "meta-llama/llama-3.1-8b-instruct:free",
+                  "messages": [{"role": "user", "content": prompt}],
+                  "temperature": 0.7, "max_tokens": 450},
+            timeout=30,
+        )
+        r.raise_for_status()
+        return r.json()["choices"][0]["message"]["content"].strip()
+    except Exception:
+        return ""
+
+
 def _card(job: dict, key_prefix: str = "card", *,
           show_score: bool = False, show_status: bool = False,
           skip_btn: bool = False, apply_btns: bool = False) -> None:
@@ -887,6 +924,25 @@ def _card(job: dict, key_prefix: str = "card", *,
             elif skip_btn:
                 if _bcols[_bi].button("Skip", key=f"sk_{key_prefix}_{jid}", use_container_width=True):
                     database.set_match(jid, 0, json.dumps({"reason": "Manually skipped"})); st.rerun()
+
+        # AI cover letter (only in Apply mode)
+        if apply_btns:
+            if st.button(":material/auto_awesome: Generate cover letter",
+                         key=f"gen_cl_{key_prefix}_{jid}", use_container_width=False):
+                _resume = database.get_resume_content()
+                if not _resume:
+                    st.warning("Upload your resume in Settings first.")
+                elif not os.environ.get("OPENROUTER_API_KEY"):
+                    st.warning("Add OPENROUTER_API_KEY in Streamlit secrets to use AI cover letters.")
+                else:
+                    with st.spinner("Generating cover letter…"):
+                        _cl = _ai_cover_letter(job, _resume)
+                    st.session_state[f"_cl_{jid}"] = _cl if _cl else "⚠ Could not generate — try again."
+
+            if f"_cl_{jid}" in st.session_state:
+                st.text_area("Cover letter", value=st.session_state[f"_cl_{jid}"],
+                             height=220, key=f"_cl_area_{jid}",
+                             help="Edit as needed, then copy and paste when applying.")
 
 
 # ---------------------------------------------------------------------------
@@ -1072,14 +1128,39 @@ elif "Search" in page:
     st.caption("Search job boards for new listings. Configure sources in Settings.")
 
     cfg = load_config()
-    all_titles = cfg.get("job_titles", [])
+
+    # ── Category selector ──────────────────────────────────────────────────
+    _cats_data = json.loads((BOT_DIR / "job_categories.json").read_text(encoding="utf-8"))
+    _saved_cats = cfg.get("selected_categories", [])
+
+    st.caption("Categories")
+    _sel_cats = st.pills(
+        "categories",
+        list(_cats_data.keys()),
+        default=_saved_cats if _saved_cats else None,
+        selection_mode="multi",
+        label_visibility="collapsed",
+    )
+
+    # Derive titles from selected categories; fall back to saved config titles
+    _from_cats: list[str] = []
+    for _c in (_sel_cats or []):
+        _from_cats.extend(_cats_data.get(_c, []))
+    _from_cats = list(dict.fromkeys(_from_cats))
+
+    all_titles = _from_cats if _from_cats else cfg.get("job_titles", [])
+
+    # Reset title selection when categories change
+    _cats_sig = "|".join(sorted(_sel_cats or []))
+    if st.session_state.get("_search_cats_sig") != _cats_sig:
+        st.session_state["_search_cats_sig"]    = _cats_sig
+        st.session_state["search_title_default"] = list(all_titles)
+        st.session_state["search_title_ver"]     = st.session_state.get("search_title_ver", 0) + 1
+
     selected_titles = []
 
     if not all_titles:
-        st.info(
-            "No job titles configured yet. "
-            "Go to **Settings → Job categories**, pick your categories, then click **Save settings**."
-        )
+        st.info("Select a category above to choose job titles to search for.")
     else:
         st.caption("Job titles")
 

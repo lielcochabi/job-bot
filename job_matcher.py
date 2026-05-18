@@ -244,15 +244,15 @@ _LOW_EXP_PATTERNS = [
 def _experience_pts(title: str, desc: str) -> tuple[int, str]:
     """
     Returns (points, reason).
-    Hard blocks (return -999) if description requires 3+ years experience.
+    Penalises (not hard-blocks) if description requires 3+ years experience.
     Returns (-15, reason) if description requires 2+ years experience.
     """
     combined = (title + " " + desc[:1500]).lower()
 
-    # Check for high experience requirements → disqualify entirely
+    # Check for high experience requirements → strong penalty only (not hard block)
     for pattern in _HIGH_EXP_PATTERNS:
         if re.search(pattern, combined):
-            return -999, f"Requires 3+ years experience"
+            return -30, "Requires 3+ years experience"
 
     # Check for medium experience requirements → soft penalty
     for pattern in _MED_EXP_PATTERNS:
@@ -525,13 +525,8 @@ def match_job(
             "matched": [], "missing": [],
         })
 
-    # 2. Experience check — hard block if 3+ years required
+    # 2. Experience check — penalty (not hard block) if 3+ years required
     exp_pts, exp_reason = _experience_pts(title, desc)
-    if exp_pts == -999:
-        return 0.0, json.dumps({
-            "reason": exp_reason,
-            "matched": [], "missing": [],
-        })
 
     # 3. Skill match (0–55 pts)
     skill_score, matched = _skill_pts(job, weights)
