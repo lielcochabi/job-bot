@@ -45,6 +45,38 @@ def init_db() -> None:
     db.jobs.create_index([("username", ASCENDING), ("match_score", DESCENDING)])
     db.resumes.create_index([("username", ASCENDING), ("path", ASCENDING)], unique=True)
     db.configs.create_index("username", unique=True)
+    db.rate_limits.create_index("source", unique=True)
+
+
+# ---------------------------------------------------------------------------
+# Rate-limit registry (global — not per-user, limits apply to the shared IP)
+# ---------------------------------------------------------------------------
+
+def set_rate_limit(source: str, hours: float = 1.0) -> None:
+    """Record that a source is rate-limited for `hours` hours."""
+    db = _get_db()
+    now        = datetime.utcnow()
+    expires_at = (now + timedelta(hours=hours)).isoformat()
+    db.rate_limits.update_one(
+        {"source": source},
+        {"$set": {"expires_at": expires_at, "blocked_at": now.isoformat(), "hours": hours}},
+        upsert=True,
+    )
+
+
+def get_rate_limits() -> dict:
+    """Return {source: {"expires_at": iso, "hours": n}} for all active limits."""
+    db  = _get_db()
+    now = datetime.utcnow().isoformat()
+    return {
+        doc["source"]: {"expires_at": doc["expires_at"], "hours": doc.get("hours", 1)}
+        for doc in db.rate_limits.find({"expires_at": {"$gt": now}})
+    }
+
+
+def clear_rate_limit(source: str) -> None:
+    """Remove the rate limit for a source (called after a successful request)."""
+    _get_db().rate_limits.delete_one({"source": source})
 
 
 def upsert_job(

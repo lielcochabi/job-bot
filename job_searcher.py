@@ -1,4 +1,4 @@
-"""
+﻿"""
 Search multiple job boards and return raw job listings.
 Sources:
   1. RemoteOK (free, no auth, remote jobs)
@@ -62,7 +62,7 @@ def _is_tech_job(title: str, description: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def search_remoteok(queries: list[str]) -> Generator[dict, None, None]:
-    """https://remoteok.com/api — returns JSON array of jobs."""
+    """https://remoteok.com/api ג€” returns JSON array of jobs."""
     seen_ids: set[str] = set()
     for query in queries:
         tag = query.lower().replace(" ", "-")
@@ -91,8 +91,10 @@ def search_remoteok(queries: list[str]) -> Generator[dict, None, None]:
                     ),
                 }
         except httpx.HTTPStatusError as e:
-            if e.response.status_code in (403, 429):
-                raise RateLimited("RemoteOK")
+            if e.response.status_code == 403:
+                raise RateLimited("RemoteOK", hours=24)
+            if e.response.status_code == 429:
+                raise RateLimited("RemoteOK", hours=1)
             print(f"  [RemoteOK] Error for '{query}': {e}")
         except RateLimited:
             raise
@@ -148,8 +150,10 @@ def search_arbeitnow(queries: list[str]) -> Generator[dict, None, None]:
                 page += 1
                 time.sleep(0.5)
             except httpx.HTTPStatusError as e:
-                if e.response.status_code in (403, 429):
-                    raise RateLimited("Arbeitnow")
+                if e.response.status_code == 403:
+                    raise RateLimited("Arbeitnow", hours=24)
+                if e.response.status_code == 429:
+                    raise RateLimited("Arbeitnow", hours=1)
                 print(f"  [Arbeitnow] Error for '{query}' page {page}: {e}")
                 break
             except RateLimited:
@@ -269,7 +273,7 @@ def search_adzuna(queries: list[str], country: str = "us") -> Generator[dict, No
                     seen.add(jurl)
                     salary = ""
                     if item.get("salary_min") and item.get("salary_max"):
-                        salary = f"${int(item['salary_min']):,} – ${int(item['salary_max']):,}"
+                        salary = f"${int(item['salary_min']):,} ג€“ ${int(item['salary_max']):,}"
                     yield {
                         "source": "Adzuna",
                         "external_id": item.get("id", ""),
@@ -357,7 +361,7 @@ def search_hn_hiring(queries: list[str]) -> Generator[dict, None, None]:
 # ---------------------------------------------------------------------------
 
 def search_remotive(queries: list[str]) -> Generator[dict, None, None]:
-    """https://remotive.com/api/remote-jobs — free, no auth required."""
+    """https://remotive.com/api/remote-jobs ג€” free, no auth required."""
     seen: set[str] = set()
     for query in queries:
         try:
@@ -387,8 +391,10 @@ def search_remotive(queries: list[str]) -> Generator[dict, None, None]:
                     "description": desc,
                 }
         except httpx.HTTPStatusError as e:
-            if e.response.status_code in (403, 429):
-                raise RateLimited("Remotive")
+            if e.response.status_code == 403:
+                raise RateLimited("Remotive", hours=24)
+            if e.response.status_code == 429:
+                raise RateLimited("Remotive", hours=1)
             print(f"  [Remotive] Error for '{query}': {e}")
         except RateLimited:
             raise
@@ -402,7 +408,7 @@ def search_remotive(queries: list[str]) -> Generator[dict, None, None]:
 # ---------------------------------------------------------------------------
 
 def search_jobicy(queries: list[str]) -> Generator[dict, None, None]:
-    """https://jobicy.com/api/v2/remote-jobs — free, no auth required."""
+    """https://jobicy.com/api/v2/remote-jobs ג€” free, no auth required."""
     seen: set[str] = set()
     for query in queries:
         try:
@@ -432,8 +438,10 @@ def search_jobicy(queries: list[str]) -> Generator[dict, None, None]:
                     "description": desc,
                 }
         except httpx.HTTPStatusError as e:
-            if e.response.status_code in (403, 429):
-                raise RateLimited("Jobicy")
+            if e.response.status_code == 403:
+                raise RateLimited("Jobicy", hours=24)
+            if e.response.status_code == 429:
+                raise RateLimited("Jobicy", hours=1)
             print(f"  [Jobicy] Error for '{query}': {e}")
         except RateLimited:
             raise
@@ -447,7 +455,7 @@ def search_jobicy(queries: list[str]) -> Generator[dict, None, None]:
 # ---------------------------------------------------------------------------
 
 def search_weworkremotely(queries: list[str]) -> Generator[dict, None, None]:
-    """https://weworkremotely.com — parses RSS feeds for programming/devops categories."""
+    """https://weworkremotely.com ג€” parses RSS feeds for programming/devops categories."""
     import xml.etree.ElementTree as ET
 
     feeds = [
@@ -512,7 +520,7 @@ def search_weworkremotely(queries: list[str]) -> Generator[dict, None, None]:
 # ---------------------------------------------------------------------------
 
 def search_workingnomads(queries: list[str]) -> Generator[dict, None, None]:
-    """https://www.workingnomads.com/api/exposed_jobs/ — free JSON API."""
+    """https://www.workingnomads.com/api/exposed_jobs/ ג€” free JSON API."""
     seen: set[str] = set()
     categories = ["back-end", "dev-ops", "software-development", "game-development",
                   "front-end", "full-stack", "data-science"]
@@ -566,7 +574,7 @@ def search_workingnomads(queries: list[str]) -> Generator[dict, None, None]:
 # ---------------------------------------------------------------------------
 
 def search_himalayas(queries: list[str]) -> Generator[dict, None, None]:
-    """https://himalayas.app/jobs/api — free, no auth, remote jobs only."""
+    """https://himalayas.app/jobs/api ג€” free, no auth, remote jobs only."""
     seen: set[str] = set()
     for query in queries:
         try:
@@ -593,7 +601,7 @@ def search_himalayas(queries: list[str]) -> Generator[dict, None, None]:
                 sal_min = item.get("salaryMin")
                 sal_max = item.get("salaryMax")
                 if sal_min and sal_max:
-                    salary = f"${sal_min:,} – ${sal_max:,}"
+                    salary = f"${sal_min:,} ג€“ ${sal_max:,}"
 
                 yield {
                     "source": "Himalayas",
@@ -606,8 +614,10 @@ def search_himalayas(queries: list[str]) -> Generator[dict, None, None]:
                     "description": desc,
                 }
         except httpx.HTTPStatusError as e:
-            if e.response.status_code in (403, 429):
-                raise RateLimited("Himalayas")
+            if e.response.status_code == 403:
+                raise RateLimited("Himalayas", hours=24)
+            if e.response.status_code == 429:
+                raise RateLimited("Himalayas", hours=1)
             print(f"  [Himalayas] Error for '{query}': {e}")
         except RateLimited:
             raise
@@ -617,11 +627,11 @@ def search_himalayas(queries: list[str]) -> Generator[dict, None, None]:
 
 
 # ---------------------------------------------------------------------------
-# Source 11: Drushim (Israeli job board — regex HTML scrape, no extra deps)
+# Source 11: Drushim (Israeli job board ג€” regex HTML scrape, no extra deps)
 # ---------------------------------------------------------------------------
 
 def search_drushim(queries: list[str]) -> Generator[dict, None, None]:
-    """Scrapes drushim.co.il tech category (cat26) using regex — no lxml needed."""
+    """Scrapes drushim.co.il tech category (cat26) using regex ג€” no lxml needed."""
     import urllib.parse
     seen: set[str] = set()
 
@@ -647,7 +657,7 @@ def search_drushim(queries: list[str]) -> Generator[dict, None, None]:
                         continue
                     seen.add(full_url)
 
-                    # Decode slug → readable title (mix of Hebrew/ASCII)
+                    # Decode slug ג†’ readable title (mix of Hebrew/ASCII)
                     decoded = urllib.parse.unquote(slug).replace('-', ' ').replace('+', ' ')
                     ascii_title = re.sub(r'[^\x20-\x7E]+', ' ', decoded).strip()
                     title = ascii_title if len(ascii_title) > 3 else query
@@ -665,8 +675,10 @@ def search_drushim(queries: list[str]) -> Generator[dict, None, None]:
 
                 time.sleep(0.5)
             except httpx.HTTPStatusError as e:
-                if e.response.status_code in (403, 429):
-                    raise RateLimited("Drushim")
+                if e.response.status_code == 403:
+                    raise RateLimited("Drushim", hours=24)
+                if e.response.status_code == 429:
+                    raise RateLimited("Drushim", hours=1)
                 print(f"  [Drushim] Error for '{query}' page {page}: {e}")
                 break
             except RateLimited:
@@ -677,11 +689,11 @@ def search_drushim(queries: list[str]) -> Generator[dict, None, None]:
 
 
 # ---------------------------------------------------------------------------
-# Source 12: Indeed Israel (RSS feed — free, no auth)
+# Source 12: Indeed Israel (RSS feed ג€” free, no auth)
 # ---------------------------------------------------------------------------
 
 def search_indeed_israel(queries: list[str]) -> Generator[dict, None, None]:
-    """Indeed Israel RSS — https://il.indeed.com — no auth required."""
+    """Indeed Israel RSS ג€” https://il.indeed.com ג€” no auth required."""
     import urllib.parse
     import xml.etree.ElementTree as ET
     seen: set[str] = set()
@@ -691,9 +703,10 @@ def search_indeed_israel(queries: list[str]) -> Generator[dict, None, None]:
         url = f"https://il.indeed.com/rss?q={q_enc}&l=Israel&sort=date&fromage=30"
         try:
             resp = httpx.get(url, headers=HEADERS, timeout=15)
-            if resp.status_code in (403, 429):
-                # Indeed blocks scrapers — stop immediately instead of spamming errors
-                raise RateLimited("Indeed IL")
+            if resp.status_code == 403:
+                raise RateLimited("Indeed IL", hours=24)  # hard block
+            if resp.status_code == 429:
+                raise RateLimited("Indeed IL", hours=1)
             resp.raise_for_status()
             root = ET.fromstring(resp.content)
 
@@ -732,18 +745,18 @@ def search_indeed_israel(queries: list[str]) -> Generator[dict, None, None]:
                     "description": desc,
                 }
         except RateLimited:
-            raise   # propagates up → prints once and skips all remaining queries
+            raise   # propagates up ג†’ prints once and skips all remaining queries
         except Exception as e:
             print(f"  [Indeed IL] Error for '{query}': {e}")
         time.sleep(0.4)
 
 
 # ---------------------------------------------------------------------------
-# Source 13: AllJobs (Israel's largest job board — internal JSON API)
+# Source 13: AllJobs (Israel's largest job board ג€” internal JSON API)
 # ---------------------------------------------------------------------------
 
 def search_alljobs(queries: list[str]) -> Generator[dict, None, None]:
-    """AllJobs.co.il — internal search API (no auth required)."""
+    """AllJobs.co.il ג€” internal search API (no auth required)."""
     seen: set[str] = set()
 
     for query in queries:
@@ -813,8 +826,16 @@ def search_alljobs(queries: list[str]) -> Generator[dict, None, None]:
 # ---------------------------------------------------------------------------
 
 class RateLimited(Exception):
-    """Raised by a source function when it hits a rate limit."""
-    pass
+    """Raised by a source function when it hits a rate limit.
+
+    Args:
+        source: human-readable source label (must match source_map label key)
+        hours:  how long to block this source (1 = 429/retry-after, 24 = 403/hard-block)
+    """
+    def __init__(self, source: str, hours: float = 1.0):
+        self.source = source
+        self.hours  = hours
+        super().__init__(f"{source} rate-limited for {hours}h")
 
 
 # Israeli city / location keywords used to filter search results
@@ -852,9 +873,9 @@ def search_all_sources(
     """
     Search all enabled sources in parallel and return de-duplicated job listings.
 
-    israel_only — use Israeli job boards + global remote boards, then filter
+    israel_only ג€” use Israeli job boards + global remote boards, then filter
                   results to Israel-based or remote positions.
-    remote_only — keep only jobs tagged remote/worldwide.
+    remote_only ג€” keep only jobs tagged remote/worldwide.
     """
     all_sources = [
         "remoteok", "arbeitnow", "themuse", "adzuna", "hn",
@@ -886,24 +907,56 @@ def search_all_sources(
 
     queue = [n for n in all_sources if n in enabled and source_map[n][2]]
 
+    # Check existing rate limits from MongoDB before running any source
+    try:
+        import database as _db
+        active_limits = _db.get_rate_limits()   # {label: {"expires_at": iso, "hours": n}}
+    except Exception:
+        active_limits = {}
+
     results_lock = threading.Lock()
     all_jobs: list[dict] = []
 
     def run_source(name: str) -> tuple[str, list[dict]]:
+        from datetime import datetime as _dt
         label, fn, _ = source_map[name]
+
+        # Skip source if still inside its cooldown window
+        if label in active_limits:
+            exp_iso = active_limits[label]["expires_at"]
+            try:
+                remaining = _dt.fromisoformat(exp_iso) - _dt.utcnow()
+                secs = max(0, remaining.total_seconds())
+                hrs  = int(secs // 3600)
+                mins = int((secs % 3600) // 60)
+                time_str = f"{hrs}h {mins}m" if hrs else f"{mins}m"
+            except Exception:
+                time_str = "a while"
+            print(f"  [{label}] Rate-limited — skipping (available in {time_str})")
+            return name, []
+
         print(f"  Searching {label}...")
         try:
             jobs = fn()
+            # Successful run — clear any stale limit
+            try:
+                _db.clear_rate_limit(label)
+            except Exception:
+                pass
             print(f"  [{label}] {len(jobs)} jobs found")
             return name, jobs
-        except RateLimited:
-            print(f"  [{label}] Rate limited — skipping")
+        except RateLimited as rl:
+            try:
+                _db.set_rate_limit(label, hours=rl.hours)
+            except Exception:
+                pass
+            print(f"  [{label}] Rate limited — blocked for {rl.hours}h")
             return name, []
         except Exception as e:
             print(f"  [{label}] Error: {e}")
             return name, []
 
-    with ThreadPoolExecutor(max_workers=6) as executor:
+        with ThreadPoolExecutor(max_workers=6) as executor:
         futures = {executor.submit(run_source, name): name for name in queue}
         for future in as_completed(futures, timeout=180):
             try:
@@ -935,3 +988,4 @@ def search_all_sources(
         ]
 
     return jobs
+

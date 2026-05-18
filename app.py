@@ -1129,6 +1129,26 @@ elif "Search" in page:
 
     cfg = load_config()
 
+    # ── Rate-limit alerts ───────────────────────────────────────────────────
+    try:
+        from datetime import datetime as _dt
+        _rl = database.get_rate_limits()
+        for _src, _info in _rl.items():
+            try:
+                _remaining = _dt.fromisoformat(_info["expires_at"]) - _dt.utcnow()
+                _secs = max(0, _remaining.total_seconds())
+                _hrs  = int(_secs // 3600)
+                _mins = int((_secs % 3600) // 60)
+                _when   = f"{_hrs}h {_mins}m" if _hrs else f"{_mins}m"
+                _reason = "blocked (403)" if _info.get("hours", 1) >= 24 else "rate limited (429)"
+            except Exception:
+                _when, _reason = "soon", "rate limited"
+            st.warning(
+                f":material/block: **{_src}** is {_reason} — will retry automatically in **{_when}**."
+            )
+    except Exception:
+        pass
+
     # ── Category selector ──────────────────────────────────────────────────
     _cats_data = json.loads((BOT_DIR / "job_categories.json").read_text(encoding="utf-8"))
     _saved_cats = cfg.get("selected_categories", [])
