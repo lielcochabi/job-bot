@@ -1,14 +1,24 @@
 [theme]
-base = "dark"
-primaryColor = "#6366f1"
-backgroundColor = "#0f172a"
-secondaryBackgroundColor = "#1e293b"
-textColor = "#e2e8f0"
-font = "sans serif"
+base            = "dark"
+primaryColor    = "#4f8ef7"
+backgroundColor = "#080d18"
+secondaryBackgroundColor = "#0c1220"
+textColor       = "#c9d8e8"
+borderColor     = "#1e2c42"
+baseRadius      = "8px"
+buttonRadius    = "7px"
+showWidgetBorder = true
+linkColor       = "#4f8ef7"
+
+[theme.sidebar]
+backgroundColor          = "#0a0f1a"
+secondaryBackgroundColor = "#0c1220"
+textColor                = "#8b98b0"
+borderColor              = "#161e2e"
 
 [server]
-headless = true
-enableCORS = false
+headless            = true
+enableCORS          = false
 enableXsrfProtection = false
 
 [browser]

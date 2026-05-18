@@ -301,6 +301,13 @@ st.markdown("""
         position: absolute; top: 12px; right: 14px;
         font-size: 0.68rem; font-weight: 500;
     }
+
+    /* ── Native bordered containers ── */
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        background: #0c1220 !important;
+        border-color: #1e2c42 !important;
+        border-radius: 10px !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -803,6 +810,85 @@ def score_color(score: float) -> str:
     return "#5c6a82"
 
 
+def _card(job: dict, key_prefix: str = "card", *,
+          show_score: bool = False, show_status: bool = False,
+          skip_btn: bool = False, apply_btns: bool = False) -> None:
+    """Render a single job listing as a native Streamlit bordered container."""
+    score    = job.get("match_score") or 0
+    title    = (job.get("title")    or "Unknown")[:80]
+    company  = job.get("company")   or ""
+    location = job.get("location")  or ""
+    source   = job.get("source")    or ""
+    url      = job.get("url")       or ""
+    salary   = job.get("salary")    or ""
+    desc     = (job.get("description") or "")[:280]
+    status   = job.get("status")    or "found"
+    jid      = job.get("id", "")
+
+    matched_skills: list[str] = []
+    try:
+        matched_skills = json.loads(job.get("match_reason") or "{}").get("matched", [])
+    except Exception:
+        pass
+
+    _STATUS_COLOR = {"found": "gray", "matched": "green", "skipped": "gray", "applied": "blue"}
+    _STATUS_LABEL = {"found": "Unscored", "matched": "Matched", "skipped": "Skipped", "applied": "Applied"}
+
+    with st.container(border=True):
+        _ha, _hb = st.columns([5, 1])
+        with _ha:
+            st.markdown(f"**{title}**")
+            _meta = [p for p in [company, location, source] if p]
+            if salary:
+                _meta.append(salary)
+            if _meta:
+                st.caption(" · ".join(_meta))
+        with _hb:
+            if show_score and score:
+                if score >= 85:
+                    st.markdown(f'<div style="text-align:right;color:#34d399;font-size:1.1rem;font-weight:700;padding-top:4px">{score:.0f}%</div>', unsafe_allow_html=True)
+                elif score >= 70:
+                    st.markdown(f'<div style="text-align:right;color:#4f8ef7;font-size:1.1rem;font-weight:700;padding-top:4px">{score:.0f}%</div>', unsafe_allow_html=True)
+                else:
+                    st.markdown(f'<div style="text-align:right;color:#5c6a82;font-size:1.1rem;font-weight:700;padding-top:4px">{score:.0f}%</div>', unsafe_allow_html=True)
+            elif show_status:
+                st.badge(
+                    _STATUS_LABEL.get(status, status),
+                    color=_STATUS_COLOR.get(status, "gray"),
+                )
+
+        if matched_skills:
+            st.markdown("  ".join(f":blue-badge[{s}]" for s in matched_skills[:8]))
+
+        if desc:
+            st.caption(desc + ("…" if len(job.get("description") or "") > 280 else ""))
+
+        # Action buttons
+        _btn_keys: list[str] = []
+        if url:          _btn_keys.append("open")
+        if apply_btns:   _btn_keys += ["applied", "later", "notint"]
+        elif skip_btn:   _btn_keys.append("skip")
+
+        if _btn_keys:
+            _bcols = st.columns([1] * len(_btn_keys) + [max(1, 6 - len(_btn_keys))])
+            _bi = 0
+            if url:
+                _bcols[_bi].link_button(":material/open_in_new: Open", url, use_container_width=True)
+                _bi += 1
+            if apply_btns:
+                if _bcols[_bi].button("Mark applied",   key=f"ma_{key_prefix}_{jid}", use_container_width=True):
+                    database.set_applied(jid); st.rerun()
+                _bi += 1
+                if _bcols[_bi].button("Keep for later", key=f"kl_{key_prefix}_{jid}", use_container_width=True):
+                    st.session_state.setdefault("snoozed_jobs", set()).add(jid); st.rerun()
+                _bi += 1
+                if _bcols[_bi].button("Not interested", key=f"ni_{key_prefix}_{jid}", use_container_width=True):
+                    database.set_match(jid, 0, json.dumps({"reason": "Not interested"})); st.rerun()
+            elif skip_btn:
+                if _bcols[_bi].button("Skip", key=f"sk_{key_prefix}_{jid}", use_container_width=True):
+                    database.set_match(jid, 0, json.dumps({"reason": "Manually skipped"})); st.rerun()
+
+
 # ---------------------------------------------------------------------------
 # Sidebar
 # ---------------------------------------------------------------------------
@@ -848,10 +934,8 @@ if "nav_page" not in st.session_state:
     st.session_state["nav_page"] = _PAGES[0]
 
 with st.sidebar:
-    st.markdown(
-        '<div style="font-size:1rem;font-weight:600;color:#e6edf3;margin-bottom:1.5rem;letter-spacing:-0.01em">Job Bot</div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown("**:material/robot: Job Bot**")
+
     # If _go() was called, force the radio to the target page before it renders
     if st.session_state.pop("_nav_from_go", False):
         st.session_state["sidebar_nav"] = st.session_state["nav_page"]
@@ -863,23 +947,20 @@ with st.sidebar:
         key="sidebar_nav",
     )
     st.session_state["nav_page"] = page
-    st.markdown("---")
-    st.markdown(
-        f'<div style="font-size:0.78rem;color:#3d4f6b;line-height:2">'
-        f'{stats["total"]} jobs found &nbsp;·&nbsp; {stats["matched"]} matched<br>'
-        f'{stats["applied"]} applied &nbsp;·&nbsp; avg {stats["avg_score"]}%'
-        f'</div>',
-        unsafe_allow_html=True,
+    st.divider()
+    st.caption(
+        f"{stats['total']} found · {stats['matched']} matched\n\n"
+        f"{stats['applied']} applied · avg {stats['avg_score']}%"
     )
-    st.markdown("---")
+    st.divider()
     if _is_guest:
-        st.markdown('<div style="font-size:0.8rem;color:#5c6a82;margin-bottom:8px">Browsing as guest</div>', unsafe_allow_html=True)
+        st.caption("Browsing as guest")
         if st.button("Log in", use_container_width=True, type="primary"):
             st.session_state.pop("username", None)
             st.session_state.pop("is_guest", None)
             st.rerun()
     else:
-        st.markdown(f'<div style="font-size:0.8rem;color:#5c6a82;margin-bottom:8px">{_username}</div>', unsafe_allow_html=True)
+        st.caption(f":material/person: {_username}")
         if st.button("Log out", use_container_width=True):
             _do_logout()
             st.rerun()
@@ -890,7 +971,7 @@ with st.sidebar:
 # ---------------------------------------------------------------------------
 
 if "Dashboard" in page:
-    st.markdown('<div class="page-title">Dashboard</div>', unsafe_allow_html=True)
+    st.title(":material/dashboard: Dashboard")
 
     if _is_guest:
         st.info("You're browsing as a guest. Log in to use all features.")
@@ -917,37 +998,45 @@ if "Dashboard" in page:
 
     sc1, sc2, sc3, sc4 = st.columns(4)
     with sc1:
-        st.markdown(f'<div class="step-card {s0}"><div class="step-num" style="color:{c0}">Step 1</div><div class="step-title">Upload resume</div><div class="step-desc">Settings → Resume. Needed for scoring.</div><span class="step-status" style="color:{c0}">{l0}</span></div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            _ic0 = ":material/check_circle:" if s0 == "done" else ":material/radio_button_checked:" if s0 == "active" else ":material/radio_button_unchecked:"
+            st.markdown(f"{_ic0} **Step 1 — Upload resume**")
+            st.caption("Settings → Resume tab. Needed for scoring.")
+            if l0: st.badge(l0, color="green" if s0 == "done" else "blue" if s0 == "active" else "gray")
         if st.button("Open Settings →", key="sc1", use_container_width=True): _go("Settings")
     with sc2:
-        st.markdown(f'<div class="step-card {s1}"><div class="step-num" style="color:{c1}">Step 2</div><div class="step-title">Search jobs</div><div class="step-desc">Scan 8 job boards for new listings.</div><span class="step-status" style="color:{c1}">{l1}</span></div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            _ic1 = ":material/check_circle:" if s1 == "done" else ":material/radio_button_checked:" if s1 == "active" else ":material/radio_button_unchecked:"
+            st.markdown(f"{_ic1} **Step 2 — Search jobs**")
+            st.caption("Scan Israeli job boards and global remote listings.")
+            if l1: st.badge(l1, color="green" if s1 == "done" else "blue" if s1 == "active" else "gray")
         if st.button("Open Search →", key="sc2", use_container_width=True): _go("Search")
     with sc3:
-        st.markdown(f'<div class="step-card {s2}"><div class="step-num" style="color:{c2}">Step 3</div><div class="step-title">Score matches</div><div class="step-desc">{"AI scoring (Llama 3)." if _has_ai else "Rule-based scoring."}</div><span class="step-status" style="color:{c2}">{l2}</span></div>', unsafe_allow_html=True)
-        if st.button(_mlabel, key="sc3_btn",
-                     use_container_width=True, disabled=not _has_jobs):
+        with st.container(border=True):
+            _ic2 = ":material/check_circle:" if s2 == "done" else ":material/radio_button_checked:" if s2 == "active" else ":material/radio_button_unchecked:"
+            st.markdown(f"{_ic2} **Step 3 — Score matches**")
+            st.caption("AI scoring (Llama 3)." if _has_ai else "Rule-based scoring (free).")
+            if l2: st.badge(l2, color="green" if s2 == "done" else "blue" if s2 == "active" else "gray")
+        if st.button(_mlabel, key="sc3_btn", use_container_width=True, disabled=not _has_jobs):
             if _has_resume:
                 launch_task([PYTHON, "-u", "main.py"] + _mcmd, "task_rematch")
     with sc4:
-        st.markdown(f'<div class="step-card {s3}"><div class="step-num" style="color:{c3}">Step 4</div><div class="step-title">Apply</div><div class="step-desc">Review matched jobs and send applications.</div><span class="step-status" style="color:{c3}">{l3}</span></div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            _ic3 = ":material/check_circle:" if s3 == "done" else ":material/radio_button_checked:" if s3 == "active" else ":material/radio_button_unchecked:"
+            st.markdown(f"{_ic3} **Step 4 — Apply**")
+            st.caption("Review matched jobs and send applications.")
+            if l3: st.badge(l3, color="green" if s3 == "done" else "blue" if s3 == "active" else "gray")
         if st.button("Open Apply →", key="sc4", use_container_width=True, disabled=not _has_matches): _go("Apply")
 
-    st.markdown(f"""
-    <div class="summary-row">
-      <div class="summary-item"><div class="num">{stats["total"]}</div><div class="lbl">Found</div></div>
-      <div class="summary-item"><div class="num accent">{stats["matched"]}</div><div class="lbl">Matched</div></div>
-      <div class="summary-item"><div class="num green">{stats["applied"]}</div><div class="lbl">Applied</div></div>
-      <div class="summary-item"><div class="num">{stats["skipped"]}</div><div class="lbl">Skipped</div></div>
-      <div class="summary-item"><div class="num">{stats["avg_score"]}%</div><div class="lbl">Avg score</div></div>
-    </div>
-    """, unsafe_allow_html=True)
+    with st.container(horizontal=True):
+        st.metric(":material/search: Found",    stats["total"],           border=True)
+        st.metric(":material/stars: Matched",   stats["matched"],         border=True)
+        st.metric(":material/send: Applied",    stats["applied"],         border=True)
+        st.metric(":material/block: Skipped",   stats["skipped"],         border=True)
+        st.metric(":material/percent: Avg score", f'{stats["avg_score"]}%', border=True)
 
     if not _has_resume:
-        st.markdown(
-            '<div style="font-size:0.8rem;color:#3d5070;margin:-12px 0 18px">'
-            'Start by uploading your resume in '
-            '<b style="color:#4f8ef7;cursor:pointer">Settings → Resume</b>'
-            '</div>', unsafe_allow_html=True)
+        st.caption(":material/info: Start by uploading your resume in **Settings → Resume**.")
 
     col1, col2, col3, col4 = st.columns(4)
     if col1.button("Search jobs",    use_container_width=True,
@@ -970,20 +1059,10 @@ if "Dashboard" in page:
             live_task_panel(key, label)
 
     if _has_matches:
-        st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
-        st.markdown('<div class="section-label">Recent matches</div>', unsafe_allow_html=True)
+        st.divider()
+        st.caption("Recent matches")
         for job in database.get_jobs_by_status("matched")[:5]:
-            score   = job.get("match_score") or 0
-            title   = (job.get("title")   or "Unknown")[:60]
-            company = (job.get("company") or "Unknown")[:30]
-            url     = job.get("url") or ""
-            c1, c2, c3 = st.columns([5, 1, 1])
-            c1.markdown(f'<div style="font-size:0.875rem;color:#dde6f0">{title}</div>'
-                        f'<div style="font-size:0.75rem;color:#3d5070">{company}</div>',
-                        unsafe_allow_html=True)
-            c2.markdown(f'<div style="color:{score_color(score)};font-size:0.85rem;padding-top:4px">{score:.0f}%</div>',
-                        unsafe_allow_html=True)
-            if url: c3.link_button("Open", url, use_container_width=True)
+            _card(job, key_prefix=f"dash_{job.get('id','')}", show_score=True, skip_btn=True)
 
 
 # ---------------------------------------------------------------------------
@@ -992,8 +1071,8 @@ if "Dashboard" in page:
 
 elif "Search" in page:
     _guest_block()
-    st.markdown('<div class="page-title">Search</div>', unsafe_allow_html=True)
-    st.markdown('<div class="page-sub">Search job boards for new listings. Configure sources in Settings.</div>', unsafe_allow_html=True)
+    st.title(":material/search: Search")
+    st.caption("Search job boards for new listings. Configure sources in Settings.")
 
     cfg = load_config()
     all_titles = cfg.get("job_titles", [])
@@ -1005,7 +1084,7 @@ elif "Search" in page:
             "Go to **Settings → Job categories**, pick your categories, then click **Save settings**."
         )
     else:
-        st.markdown('<div class="section-label">Job titles</div>', unsafe_allow_html=True)
+        st.caption("Job titles")
 
         # Version counter: incrementing forces the multiselect to re-init with the new default
         if "search_title_ver" not in st.session_state:
@@ -1042,7 +1121,7 @@ elif "Search" in page:
         _saved = cfg.get("location_mode", "Israel (on-site + remote)")
         st.session_state["search_loc"] = _saved if _saved in _loc_opts else "Israel (on-site + remote)"
 
-    st.markdown('<div class="section-label">Location</div>', unsafe_allow_html=True)
+    st.caption("Location")
     _loc_mode = st.segmented_control(
         "loc_mode",
         _loc_opts,
@@ -1053,7 +1132,7 @@ elif "Search" in page:
     if _loc_mode:
         st.session_state["search_loc"] = _loc_mode
 
-    st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+    st.divider()
 
     _can_search = bool(selected_titles)
     if all_titles and not selected_titles:
@@ -1092,16 +1171,11 @@ elif "Search" in page:
     stats  = database.get_stats()
 
     if stats["total"] > 0:
-        st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
-        st.markdown(
-            f'<div style="font-size:0.78rem;color:#3d4f6b;margin-bottom:1rem">'
-            f'{stats["total"]} total &nbsp;·&nbsp; {stats["found"]} unscored &nbsp;·&nbsp; {stats["matched"]} matched'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+        st.divider()
+        st.caption(f"{stats['total']} total · {stats['found']} unscored · {stats['matched']} matched")
 
         if recent:
-            st.markdown(f'<div class="section-label">Found in last 24h — {len(recent)} jobs</div>', unsafe_allow_html=True)
+            st.caption(f":material/schedule: Found in last 24h — {len(recent)} jobs")
 
             search_filter = st.text_input("Filter", placeholder="Filter by title or company...", label_visibility="collapsed")
 
@@ -1112,42 +1186,9 @@ elif "Search" in page:
                            or fl in (j.get("company") or "").lower()]
 
             for job in display[:150]:
-                title    = job.get("title")   or "Unknown"
-                company  = job.get("company") or "Unknown"
-                location = job.get("location") or ""
-                source   = job.get("source") or ""
-                url      = job.get("url") or ""
-                salary   = job.get("salary") or ""
-                desc     = (job.get("description") or "")[:250]
-                status   = job.get("status") or "found"
-
-                meta_parts = [p for p in [company, location, source] if p]
-                salary_str = f' · {salary}' if salary else ""
-
-                status_colors = {
-                    "found":   ("background:#161d2b;color:#5c6a82", "Unscored"),
-                    "matched": ("background:#0d2218;color:#34d399",  "Matched"),
-                    "skipped": ("background:#161d2b;color:#3d4f6b",  "Skipped"),
-                    "applied": ("background:#0d1829;color:#60a5fa",  "Applied"),
-                }
-                sc_style, sc_label = status_colors.get(status, ("background:#161d2b;color:#5c6a82", status))
-
-                st.markdown(f"""
-                <div class="job-card">
-                    <div style="display:flex;align-items:flex-start;justify-content:space-between">
-                        <div class="job-title">{title}</div>
-                        <span class="status-badge" style="{sc_style}">{sc_label}</span>
-                    </div>
-                    <div class="job-meta">{' · '.join(meta_parts)}{salary_str}</div>
-                    <div class="desc">{desc}{"…" if len(job.get("description") or "") > 250 else ""}</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-                if url:
-                    btn_col, _ = st.columns([1, 7])
-                    btn_col.link_button("Open", url, use_container_width=True)
+                _card(job, key_prefix=f"srch_{job.get('id','')}", show_status=True)
         else:
-            st.markdown('<div style="font-size:0.85rem;color:#3d4f6b">No jobs found in the last 24 hours.</div>', unsafe_allow_html=True)
+            st.caption("No jobs found in the last 24 hours.")
 
 
 # ---------------------------------------------------------------------------
@@ -1156,8 +1197,8 @@ elif "Search" in page:
 
 elif "Matched" in page:
     _guest_block()
-    st.markdown('<div class="page-title">Matched Jobs</div>', unsafe_allow_html=True)
-    st.markdown('<div class="page-sub">Jobs scoring ≥70% against your profile.</div>', unsafe_allow_html=True)
+    st.title(":material/stars: Matched Jobs")
+    st.caption("Jobs scoring ≥70% against your profile.")
 
     matched = database.get_jobs_by_status("matched")
 
@@ -1181,57 +1222,13 @@ elif "Matched" in page:
         for job in filtered:
             grouped[job.get("source") or "Unknown"].append(job)
 
-        st.markdown(
-            f'<div style="font-size:0.78rem;color:#3d4f6b;margin-bottom:1.5rem">'
-            f'{len(filtered)} jobs across {len(grouped)} sources</div>',
-            unsafe_allow_html=True,
-        )
-
-        def render_job_card(job, page_key="matched"):
-            score    = job.get("match_score") or 0
-            title    = job.get("title")   or "Unknown"
-            company  = job.get("company") or "Unknown"
-            location = job.get("location") or ""
-            url      = job.get("url") or ""
-            salary   = job.get("salary") or ""
-            desc     = (job.get("description") or "")[:400]
-
-            matched_skills: list[str] = []
-            try:
-                rd = json.loads(job.get("match_reason") or "{}")
-                matched_skills = rd.get("matched", [])
-            except Exception:
-                pass
-
-            sc = score_color(score)
-            skills_html = " ".join(f'<span class="skill-tag">{s}</span>' for s in matched_skills[:10])
-            meta_parts  = [p for p in [company, location] if p]
-            salary_str  = f' · {salary}' if salary else ""
-
-            st.markdown(f"""
-            <div class="job-card">
-                <div style="display:flex;align-items:flex-start;justify-content:space-between">
-                    <div class="job-title">{title}</div>
-                    <span class="score-pill" style="background:{sc}18;color:{sc}">{score:.0f}%</span>
-                </div>
-                <div class="job-meta">{' · '.join(meta_parts)}{salary_str}</div>
-                <div style="margin-bottom:8px">{skills_html}</div>
-                <div class="desc">{desc}{"…" if len(job.get("description") or "") > 400 else ""}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-            btn1, btn2, _ = st.columns([1, 1, 6])
-            if url:
-                btn1.link_button("Open", url, use_container_width=True)
-            if btn2.button("Skip", key=f"skip_{page_key}_{job['id']}", use_container_width=True):
-                database.set_match(job["id"], 0, json.dumps({"reason": "Manually skipped"}))
-                st.rerun()
+        st.caption(f":material/work: {len(filtered)} jobs across {len(grouped)} sources")
 
         for source, jobs in sorted(grouped.items(), key=lambda x: -len(x[1])):
             n = len(jobs)
             with st.expander(f"{source}  ·  {n} {'job' if n == 1 else 'jobs'}", expanded=True):
                 for job in jobs:
-                    render_job_card(job, page_key=source)
+                    _card(job, key_prefix=f"{source}_{job.get('id','')}", show_score=True, skip_btn=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1240,69 +1237,19 @@ elif "Matched" in page:
 
 elif "Apply" in page:
     _guest_block()
-    st.markdown('<div class="page-title">Apply</div>', unsafe_allow_html=True)
+    st.title(":material/send: Apply")
 
     matched = database.get_jobs_by_status("matched")
     snoozed = st.session_state.get("snoozed_jobs", set())
     matched = [j for j in matched if j["id"] not in snoozed]
 
-    st.markdown(
-        f'<div class="page-sub">{stats.get("applied", 0)} applied · {len(matched)} remaining</div>',
-        unsafe_allow_html=True,
-    )
+    st.caption(f"{stats.get('applied', 0)} applied · {len(matched)} remaining")
 
     if not matched:
         st.info("No matched jobs to apply to. Run a search first.")
     else:
         for job in matched:
-            job_id = job["id"]
-            score  = job.get("match_score") or 0
-            title  = job.get("title")   or "Unknown"
-            company  = job.get("company") or "Unknown"
-            location = job.get("location") or ""
-            url      = job.get("url") or ""
-            salary   = job.get("salary") or ""
-            desc     = (job.get("description") or "")[:350]
-
-            matched_skills: list[str] = []
-            try:
-                rd = json.loads(job.get("match_reason") or "{}")
-                matched_skills = rd.get("matched", [])
-            except Exception:
-                pass
-
-            sc = score_color(score)
-            skills_html = " ".join(f'<span class="skill-tag">{s}</span>' for s in matched_skills[:10])
-            meta_parts  = [p for p in [company, location] if p]
-            salary_str  = f' · {salary}' if salary else ""
-
-            st.markdown(f"""
-            <div class="job-card">
-                <div style="display:flex;align-items:flex-start;justify-content:space-between">
-                    <div class="job-title">{title}</div>
-                    <span class="score-pill" style="background:{sc}18;color:{sc}">{score:.0f}%</span>
-                </div>
-                <div class="job-meta">{' · '.join(meta_parts)}{salary_str}</div>
-                <div style="margin-bottom:8px">{skills_html}</div>
-                <div class="desc">{desc}{"…" if len(job.get("description") or "") > 350 else ""}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-            b1, b2, b3, b4 = st.columns(4)
-            if url:
-                b1.link_button("Open", url, use_container_width=True)
-            else:
-                b1.button("Open", key=f"open_{job_id}", disabled=True, use_container_width=True)
-            if b2.button("Mark applied", key=f"applied_{job_id}", use_container_width=True):
-                database.set_applied(job_id)
-                st.rerun()
-            if b3.button("Keep for later", key=f"later_{job_id}", use_container_width=True):
-                st.session_state.setdefault("snoozed_jobs", set()).add(job_id)
-                st.rerun()
-            if b4.button("Not interested", key=f"skip_{job_id}", use_container_width=True):
-                database.set_match(job_id, 0, json.dumps({"reason": "Not interested"}))
-                st.rerun()
-            st.markdown("")
+            _card(job, key_prefix="apply", show_score=True, apply_btns=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1313,8 +1260,8 @@ elif "Tracker" in page:
     _guest_block()
     import tracker as _tracker
 
-    st.markdown('<div class="page-title">Tracker</div>', unsafe_allow_html=True)
-    st.markdown('<div class="page-sub">Update outcomes as you hear back from companies.</div>', unsafe_allow_html=True)
+    st.title(":material/track_changes: Tracker")
+    st.caption("Update outcomes as you hear back from companies.")
 
     jobs = _tracker.get_all_jobs(username=_username)
 
@@ -1323,15 +1270,12 @@ elif "Tracker" in page:
     else:
         from collections import Counter
         sc = Counter(j.get("Status", "") for j in jobs)
-        st.markdown(f"""
-        <div class="summary-row" style="margin-bottom:1.5rem">
-            <div class="summary-item"><div class="num">{len(jobs)}</div><div class="lbl">Total</div></div>
-            <div class="summary-item"><div class="num">{sc.get("Applied", 0)}</div><div class="lbl">Applied</div></div>
-            <div class="summary-item"><div class="num">{sc.get("Interview", 0)}</div><div class="lbl">Interview</div></div>
-            <div class="summary-item"><div class="num">{sc.get("Accepted", 0)}</div><div class="lbl">Accepted</div></div>
-            <div class="summary-item"><div class="num">{sc.get("Denied", 0)}</div><div class="lbl">Denied</div></div>
-        </div>
-        """, unsafe_allow_html=True)
+        with st.container(horizontal=True):
+            st.metric(":material/work: Total",      len(jobs),              border=True)
+            st.metric(":material/send: Applied",    sc.get("Applied", 0),   border=True)
+            st.metric(":material/chat: Interview",  sc.get("Interview", 0), border=True)
+            st.metric(":material/check: Accepted",  sc.get("Accepted", 0),  border=True)
+            st.metric(":material/close: Denied",    sc.get("Denied", 0),    border=True)
 
         import re as _re
         _safe_user = _re.sub(r"[^\w]", "_", _username.lower())
@@ -1341,16 +1285,21 @@ elif "Tracker" in page:
                 st.download_button("Download Excel", data=f.read(), file_name=_user_tracker.name,
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-        st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+        st.divider()
 
         status_filter = st.selectbox("Filter", ["All"] + _tracker.STATUS_OPTIONS, label_visibility="collapsed")
         filtered = jobs if status_filter == "All" else [j for j in jobs if j.get("Status") == status_filter]
 
-        st.markdown(f'<div style="font-size:0.78rem;color:#3d4f6b;margin-bottom:1rem">{len(filtered)} job{"s" if len(filtered) != 1 else ""}</div>', unsafe_allow_html=True)
+        st.caption(f"{len(filtered)} job{'s' if len(filtered) != 1 else ''}")
 
         status_color_map = {
             "Applied": "#60a5fa", "Manual - Pending": "#f59e0b",
             "Interview": "#34d399", "Accepted": "#34d399", "Denied": "#f87171",
+        }
+
+        _STATUS_BADGE_COLOR = {
+            "Applied": "blue", "Manual - Pending": "orange",
+            "Interview": "green", "Accepted": "green", "Denied": "red",
         }
 
         for i, job in enumerate(filtered):
@@ -1360,34 +1309,32 @@ elif "Tracker" in page:
             status  = job.get("Status", "Applied")
             date    = job.get("Date Applied", "")
             score   = job.get("Match Score", "")
-            sc_col  = status_color_map.get(status, "#5c6a82")
             meta    = " · ".join(p for p in [company, date, score] if p)
 
-            st.markdown(f"""
-            <div class="job-card">
-                <div style="display:flex;align-items:flex-start;justify-content:space-between">
-                    <div class="job-title">{title}</div>
-                    <span class="status-badge" style="background:{sc_col}18;color:{sc_col}">{status}</span>
-                </div>
-                <div class="job-meta">{meta}</div>
-            </div>
-            """, unsafe_allow_html=True)
+            with st.container(border=True):
+                _ta, _tb = st.columns([5, 1])
+                with _ta:
+                    st.markdown(f"**{title}**")
+                    if meta:
+                        st.caption(meta)
+                with _tb:
+                    st.badge(status, color=_STATUS_BADGE_COLOR.get(status, "gray"))
 
-            col_status, col_notes, col_save, col_open = st.columns([2, 3, 1, 1])
-            with col_status:
-                new_status = st.selectbox("Status", _tracker.STATUS_OPTIONS,
-                    index=_tracker.STATUS_OPTIONS.index(status) if status in _tracker.STATUS_OPTIONS else 0,
-                    key=f"status_{i}", label_visibility="collapsed")
-            with col_notes:
-                notes = st.text_input("Notes", value=job.get("Notes", "") or "",
-                    key=f"notes_{i}", label_visibility="collapsed", placeholder="Notes...")
-            with col_save:
-                if st.button("Save", key=f"save_{i}", use_container_width=True):
-                    _tracker.update_status(url, new_status, notes, username=_username)
-                    st.rerun()
-            with col_open:
-                if url:
-                    st.link_button("Open", url, use_container_width=True)
+                col_status, col_notes, col_save, col_open = st.columns([2, 3, 1, 1])
+                with col_status:
+                    new_status = st.selectbox("Status", _tracker.STATUS_OPTIONS,
+                        index=_tracker.STATUS_OPTIONS.index(status) if status in _tracker.STATUS_OPTIONS else 0,
+                        key=f"status_{i}", label_visibility="collapsed")
+                with col_notes:
+                    notes = st.text_input("Notes", value=job.get("Notes", "") or "",
+                        key=f"notes_{i}", label_visibility="collapsed", placeholder="Notes...")
+                with col_save:
+                    if st.button(":material/save:", key=f"save_{i}", use_container_width=True, help="Save status & notes"):
+                        _tracker.update_status(url, new_status, notes, username=_username)
+                        st.toast("Saved.", icon=":material/check:")
+                with col_open:
+                    if url:
+                        st.link_button(":material/open_in_new:", url, use_container_width=True, help="Open job posting")
 
 
 # ---------------------------------------------------------------------------
@@ -1396,21 +1343,17 @@ elif "Tracker" in page:
 
 elif "Settings" in page:
     _guest_block()
-    st.markdown('<div class="page-title">Settings</div>', unsafe_allow_html=True)
-    st.markdown('<div class="page-sub">Configure your search, profile, and matching preferences.</div>', unsafe_allow_html=True)
+    st.title(":material/settings: Settings")
+    st.caption("Configure your search, profile, and matching preferences.")
 
     cfg = load_config()
 
     # Save button at the top — all widget values are still collected below before saving
     _save_top = st.button("Save settings", type="primary", key="save_settings_top",
                           use_container_width=False)
-    st.markdown(
-        '<div style="font-size:0.75rem;color:#3d5070;margin:-6px 0 18px">'
-        'Changes take effect after saving.</div>',
-        unsafe_allow_html=True,
-    )
+    st.caption("Changes take effect after saving.")
 
-    with st.expander("Resume", expanded=True):
+    with st.expander(":material/description: Resume", expanded=True):
         existing_resume = database.get_resume_content()
         st.caption(f"{len(existing_resume):,} characters stored" if existing_resume else "No resume uploaded yet.")
         uploaded = st.file_uploader("Upload PDF or DOCX", type=["pdf", "docx"], label_visibility="collapsed")
@@ -1424,14 +1367,13 @@ elif "Settings" in page:
                 database.save_resume(str(resume_path), text)
                 profile_data = rp.extract_resume_profile(text)
                 st.session_state["auto_profile"] = profile_data
-                st.success(f"Parsed {uploaded.name} — {len(text):,} characters")
+                st.toast(f"Parsed {uploaded.name} — {len(text):,} characters", icon=":material/check:")
                 if profile_data.get("skills"):
-                    skills_html = " ".join(f'<span class="skill-tag">{s}</span>' for s in profile_data["skills"])
-                    st.markdown(skills_html, unsafe_allow_html=True)
+                    st.markdown("  ".join(f":blue-badge[{s}]" for s in profile_data["skills"]))
             else:
                 st.error(f"Could not parse {uploaded.name}.")
 
-    with st.expander("Job categories", expanded=True):
+    with st.expander(":material/category: Job categories", expanded=True):
         st.caption("Select categories to populate your search titles, then click Save settings.")
         _cats = json.loads((BOT_DIR / "job_categories.json").read_text(encoding="utf-8"))
         saved_cats = cfg.get("selected_categories", [])
@@ -1446,13 +1388,9 @@ elif "Settings" in page:
             cat_titles.extend(_cats.get(cat, []))
         cat_titles = list(dict.fromkeys(cat_titles))  # deduplicate, preserve order
         if cat_titles:
-            st.markdown(
-                f'<div style="font-size:0.75rem;color:#3d5070;margin-top:8px">'
-                f'{len(cat_titles)} titles from selected categories</div>',
-                unsafe_allow_html=True,
-            )
+            st.caption(f":material/check_circle: {len(cat_titles)} titles from selected categories")
 
-    with st.expander("Custom job titles", expanded=False):
+    with st.expander(":material/edit: Custom job titles", expanded=False):
         st.caption("Extra titles to search for on top of the categories above. One per line.")
         custom_raw = st.text_area("Custom titles", value="\n".join(cfg.get("custom_job_titles", [])),
             height=140, label_visibility="collapsed", placeholder="e.g. Prompt Engineer\nAI Product Manager")
@@ -1461,7 +1399,7 @@ elif "Settings" in page:
         all_titles = cat_titles + [t for t in custom_titles if t not in cat_titles]
         st.caption(f"{len(all_titles)} total titles active")
 
-    with st.expander("Job sources", expanded=False):
+    with st.expander(":material/public: Job sources", expanded=False):
         st.caption("Select which job boards to search. All 8 sources are enabled by default.")
         _SOURCE_MAP = {
             "Drushim (IL)":    "drushim",
@@ -1484,12 +1422,12 @@ elif "Settings" in page:
             if _src_cols[_si % 3].checkbox(_slabel, value=_skey in _saved_sources, key=f"src_{_skey}"):
                 selected_sources_settings.append(_skey)
 
-    with st.expander("Company blacklist", expanded=False):
+    with st.expander(":material/block: Company blacklist", expanded=False):
         st.caption("Jobs from these companies will be skipped automatically.")
         blacklist_raw = st.text_area("One per line", value="\n".join(cfg.get("blacklisted_companies", [])),
             height=120, label_visibility="collapsed", placeholder="Amazon\nUber\nMeta")
 
-    with st.expander("Matching", expanded=True):
+    with st.expander(":material/tune: Matching", expanded=True):
         col1, col2 = st.columns(2)
         with col1:
             threshold   = st.slider("Score threshold (%)", 50, 95, int(cfg.get("match_threshold", 70)))
@@ -1505,7 +1443,7 @@ elif "Settings" in page:
             default=_cur_loc,
         )
 
-    with st.expander("Your profile", expanded=True):
+    with st.expander(":material/person: Your profile", expanded=True):
         auto_profile = st.session_state.get("auto_profile", {})
         profile = {**cfg.get("profile", {}), **auto_profile}
         col1, col2 = st.columns(2)
@@ -1519,7 +1457,7 @@ elif "Settings" in page:
             linkedin = st.text_input("LinkedIn handle", value=profile.get("linkedin_handle", ""))
         summary = st.text_area("Summary", value=profile.get("summary", ""), height=100)
 
-    st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+    st.divider()
 
     if st.button("Save settings", type="primary", key="save_settings_bottom") or _save_top:
         cfg["selected_categories"]   = selected_cats
@@ -1539,8 +1477,8 @@ elif "Settings" in page:
         save_config(cfg)
         st.toast("Settings saved.", icon=":material/check:")
 
-    st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
-    with st.expander("Database", expanded=False):
+    st.divider()
+    with st.expander(":material/storage: Database", expanded=False):
         st.caption(f"Total jobs stored: {stats['total']} · Applied (kept forever): {stats['applied']}")
         col_a, col_b = st.columns(2)
         if col_a.button("Clean jobs older than 7 days", use_container_width=True):
@@ -1560,8 +1498,8 @@ elif "Settings" in page:
 # ---------------------------------------------------------------------------
 
 elif "Help" in page:
-    st.markdown('<div class="page-title">Help</div>', unsafe_allow_html=True)
-    st.markdown('<div class="page-sub">How to use Job Bot from start to finish.</div>', unsafe_allow_html=True)
+    st.title(":material/help: Help")
+    st.caption("How to use Job Bot from start to finish.")
 
     st.markdown("""
     ### How it works
