@@ -58,7 +58,8 @@ def load_config() -> dict:
 def search(
     queries: list[str] = typer.Option(None, "--query", "-q", help="Job title / keywords (repeatable)"),
     remote_only: bool = typer.Option(False, "--remote", help="Only include remote jobs"),
-    sources: str = typer.Option("", "--sources", help="Comma-separated sources: remoteok,arbeitnow,themuse,adzuna,hn"),
+    sources: str = typer.Option("", "--sources", help="Comma-separated sources"),
+    location: str = typer.Option("", "--location", help="Location mode: israel | remote | worldwide"),
 ):
     """Search job boards and store new listings in the database."""
     database.init_db()
@@ -72,8 +73,10 @@ def search(
         console.print("Use [bold]--query[/bold] or set [bold]job_titles[/bold] in config.json")
         raise typer.Exit(1)
 
+    loc = location.lower().strip()
+    israel_only = loc == "israel"
     if not remote_only:
-        remote_only = cfg.get("remote_only", False)
+        remote_only = (loc == "remote") or cfg.get("remote_only", False)
 
     enabled_sources = [s.strip() for s in sources.split(",") if s.strip()] if sources else None
 
@@ -83,9 +86,10 @@ def search(
     if expired:
         console.print(f"  [dim]Removed {expired} expired jobs (older than {expiry_days} days)[/dim]")
 
+    location_label = "Israel (on-site + remote)" if israel_only else ("Remote only" if remote_only else "Worldwide")
     console.print(Panel.fit(
         f"[bold cyan]Searching for:[/bold cyan] {', '.join(queries)}\n"
-        f"[bold]Remote only:[/bold] {remote_only}",
+        f"[bold]Location:[/bold] {location_label}",
         title="[bold]Job Search[/bold]",
     ))
 
@@ -93,6 +97,7 @@ def search(
         queries=queries,
         sources=enabled_sources,
         remote_only=remote_only,
+        israel_only=israel_only,
     )
     console.print(f"  Found [bold]{len(jobs)}[/bold] raw listings, saving...")
 
@@ -423,8 +428,11 @@ def run(
 
     if threshold is None:
         threshold = cfg.get("match_threshold", 70.0)
+
+    loc_mode = cfg.get("location_mode", "")
     if remote_only is None:
-        remote_only = cfg.get("remote_only", False)
+        remote_only = (loc_mode == "Remote only") or cfg.get("remote_only", False)
+    _location_arg = "israel" if loc_mode == "Israel (on-site + remote)" else ("remote" if remote_only else "")
 
     console.print(Panel.fit(
         "[bold cyan]Job Bot -- Full Pipeline[/bold cyan]\n"
@@ -439,7 +447,7 @@ def run(
         console.print("[red]No job_titles in config.json. Run [bold]python main.py setup[/bold] first.[/red]")
         raise typer.Exit(1)
 
-    search(queries=queries, remote_only=remote_only, sources="")  # type: ignore
+    search(queries=queries, remote_only=remote_only, sources="", location=_location_arg)  # type: ignore
 
     # 2. Match
     console.rule("[bold]Phase 2: Match[/bold]")

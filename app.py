@@ -1030,7 +1030,21 @@ elif "Search" in page:
         # Persist current selection so it survives navigation and reruns
         st.session_state["search_title_default"] = list(selected_titles)
 
-    remote_only = st.checkbox("Remote only", value=cfg.get("remote_only", False))
+    _loc_opts = ["Israel (on-site + remote)", "Remote only", "Worldwide"]
+    if "search_loc" not in st.session_state:
+        _saved = cfg.get("location_mode", "Israel (on-site + remote)")
+        st.session_state["search_loc"] = _saved if _saved in _loc_opts else "Israel (on-site + remote)"
+
+    st.markdown('<div class="section-label">Location</div>', unsafe_allow_html=True)
+    _loc_mode = st.radio(
+        "loc_mode",
+        _loc_opts,
+        index=_loc_opts.index(st.session_state["search_loc"]),
+        horizontal=True,
+        label_visibility="collapsed",
+        key="search_loc_radio",
+    )
+    st.session_state["search_loc"] = _loc_mode
 
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
@@ -1045,7 +1059,9 @@ elif "Search" in page:
             cmd.extend(["-q", q])
         if enabled_sources:
             cmd.extend(["--sources", ",".join(enabled_sources)])
-        if remote_only:
+        if _loc_mode == "Israel (on-site + remote)":
+            cmd.extend(["--location", "israel"])
+        elif _loc_mode == "Remote only":
             cmd.append("--remote")
         launch_task(cmd, "task_search")
 
@@ -1430,21 +1446,24 @@ elif "Settings" in page:
     with st.expander("Job sources", expanded=False):
         st.caption("Select which job boards to search. All 8 sources are enabled by default.")
         _SOURCE_MAP = {
+            "Drushim (IL)":    "drushim",
+            "Indeed Israel":   "indeed_il",
+            "AllJobs (IL)":    "alljobs",
             "RemoteOK":        "remoteok",
+            "Remotive":        "remotive",
+            "Jobicy":          "jobicy",
+            "Himalayas":       "himalayas",
             "Arbeitnow":       "arbeitnow",
             "The Muse":        "themuse",
             "HN Who's Hiring": "hn",
-            "Remotive":        "remotive",
-            "Jobicy":          "jobicy",
             "Working Nomads":  "workingnomads",
-            "Himalayas":       "himalayas",
         }
         _all_src_keys = list(_SOURCE_MAP.values())
         _saved_sources = cfg.get("selected_sources", _all_src_keys)
         selected_sources_settings = []
-        _src_cols = st.columns(4)
+        _src_cols = st.columns(3)
         for _si, (_slabel, _skey) in enumerate(_SOURCE_MAP.items()):
-            if _src_cols[_si % 4].checkbox(_slabel, value=_skey in _saved_sources, key=f"src_{_skey}"):
+            if _src_cols[_si % 3].checkbox(_slabel, value=_skey in _saved_sources, key=f"src_{_skey}"):
                 selected_sources_settings.append(_skey)
 
     with st.expander("Company blacklist", expanded=False):
@@ -1453,13 +1472,21 @@ elif "Settings" in page:
             height=120, label_visibility="collapsed", placeholder="Amazon\nUber\nMeta")
 
     with st.expander("Matching", expanded=True):
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         with col1:
-            threshold = st.slider("Score threshold (%)", 50, 95, int(cfg.get("match_threshold", 70)))
+            threshold   = st.slider("Score threshold (%)", 50, 95, int(cfg.get("match_threshold", 70)))
         with col2:
-            remote_only = st.checkbox("Remote only", value=cfg.get("remote_only", False))
-        with col3:
             expiry_days = st.number_input("Expire jobs after (days)", min_value=7, max_value=90, value=int(cfg.get("job_expiry_days", 30)))
+        _loc_opts_s = ["Israel (on-site + remote)", "Remote only", "Worldwide"]
+        _cur_loc    = cfg.get("location_mode", "Israel (on-site + remote)")
+        if _cur_loc not in _loc_opts_s:
+            _cur_loc = "Israel (on-site + remote)"
+        location_mode = st.radio(
+            "Default location for searches",
+            _loc_opts_s,
+            index=_loc_opts_s.index(_cur_loc),
+            horizontal=True,
+        )
 
     with st.expander("Your profile", expanded=True):
         auto_profile = st.session_state.get("auto_profile", {})
@@ -1483,8 +1510,9 @@ elif "Settings" in page:
         cfg["job_titles"]            = all_titles
         cfg["selected_sources"]      = selected_sources_settings
         cfg["blacklisted_companies"] = [t.strip() for t in blacklist_raw.splitlines() if t.strip()]
+        cfg["location_mode"]    = location_mode
+        cfg["remote_only"]      = location_mode == "Remote only"   # keep for backward compat
         cfg["match_threshold"]  = threshold
-        cfg["remote_only"]      = remote_only
         cfg["job_expiry_days"]  = expiry_days
         cfg["profile"] = {
             "name": name, "email": email, "phone": phone,

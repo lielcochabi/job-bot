@@ -607,87 +607,50 @@ def search_himalayas(queries: list[str]) -> Generator[dict, None, None]:
 
 
 # ---------------------------------------------------------------------------
-# Source 11: Drushim (Israeli job board — server-rendered HTML, free)
+# Source 11: Drushim (Israeli job board — regex HTML scrape, no extra deps)
 # ---------------------------------------------------------------------------
 
 def search_drushim(queries: list[str]) -> Generator[dict, None, None]:
-    """
-    Scrapes drushim.co.il — Israel's second-largest job board.
-    Uses the software/programming category (cat26) with keyword search.
-    """
-    from lxml import html as lxml_html
-
-    # Tech categories on Drushim
-    CATEGORY_URL = "https://www.drushim.co.il/jobs/cat26/"
+    """Scrapes drushim.co.il tech category (cat26) using regex — no lxml needed."""
+    import urllib.parse
     seen: set[str] = set()
 
     for query in queries:
-        for page in range(1, 4):
-            params = f"?q={query.replace(' ', '+')}&page={page}" if page > 1 else f"?q={query.replace(' ', '+')}"
-            url = CATEGORY_URL + params
+        for page in range(1, 3):
+            q_enc = urllib.parse.quote_plus(query)
+            url = f"https://www.drushim.co.il/jobs/cat26/?q={q_enc}"
+            if page > 1:
+                url += f"&page={page}"
             try:
                 resp = httpx.get(url, headers=HEADERS, timeout=15)
                 resp.raise_for_status()
-                tree = lxml_html.fromstring(resp.content)
+                body = resp.text
 
-                # Job links follow pattern /job/[id]/[hash]/
-                job_nodes = tree.xpath('//a[contains(@href, "/job/") and contains(@href, "/")]')
-                if not job_nodes:
+                # Job URLs: /job/{numeric_id}/{slug}/
+                matches = re.findall(r'href="(/job/(\d+)/([^"/]+)/)"', body)
+                if not matches:
                     break
 
-                job_urls_seen_this_page = set()
-                for node in job_nodes:
-                    href = node.get("href", "")
-                    if not re.match(r"^/job/\d+/", href):
-                        continue
+                for href, job_id, slug in matches:
                     full_url = f"https://www.drushim.co.il{href}"
-                    if full_url in seen or full_url in job_urls_seen_this_page:
+                    if full_url in seen:
                         continue
-                    job_urls_seen_this_page.add(full_url)
                     seen.add(full_url)
 
-                    # Try to get title from the link text or nearby h3
-                    parent = node.getparent()
-                    title = ""
-                    # Look for h3 in the same card
-                    h3_nodes = node.xpath('.//h3') or (parent.xpath('.//h3') if parent is not None else [])
-                    if h3_nodes:
-                        title = h3_nodes[0].text_content().strip()
-                    if not title:
-                        title = node.text_content().strip()
-                    if not title or len(title) < 3:
-                        continue
-
-                    # Company: look for nearby link with company path pattern
-                    company = ""
-                    company_nodes = (
-                        node.xpath('./following-sibling::a[contains(@href,"/דרושים-")]') or
-                        (parent.xpath('.//a[contains(@href,"/דרושים-")]') if parent is not None else [])
-                    )
-                    if company_nodes:
-                        company = company_nodes[0].text_content().strip()
-
-                    # Location: first span with Hebrew city name
-                    location = "Israel"
-                    span_nodes = parent.xpath('.//span') if parent is not None else []
-                    for span in span_nodes:
-                        txt = span.text_content().strip()
-                        if txt and 2 < len(txt) < 30 and not txt.isdigit():
-                            location = txt
-                            break
-
-                    if not _is_tech_job(title, ""):
-                        continue
+                    # Decode slug → readable title (mix of Hebrew/ASCII)
+                    decoded = urllib.parse.unquote(slug).replace('-', ' ').replace('+', ' ')
+                    ascii_title = re.sub(r'[^\x20-\x7E]+', ' ', decoded).strip()
+                    title = ascii_title if len(ascii_title) > 3 else query
 
                     yield {
-                        "source": "Drushim",
-                        "external_id": re.search(r"/job/(\d+)/", href).group(1) if re.search(r"/job/(\d+)/", href) else href,
-                        "title": title,
-                        "company": company,
-                        "location": location,
-                        "salary": "",
-                        "url": full_url,
-                        "description": f"{title} at {company}. Location: {location}. Apply at {full_url}",
+                        "source":      "Drushim",
+                        "external_id": job_id,
+                        "title":       title,
+                        "company":     "",
+                        "location":    "Israel",
+                        "salary":      "",
+                        "url":         full_url,
+                        "description": f"{query} position in Israel. Full details at {full_url}",
                     }
 
                 time.sleep(0.5)
@@ -704,6 +667,133 @@ def search_drushim(queries: list[str]) -> Generator[dict, None, None]:
 
 
 # ---------------------------------------------------------------------------
+# Source 12: Indeed Israel (RSS feed — free, no auth)
+# ---------------------------------------------------------------------------
+
+def search_indeed_israel(queries: list[str]) -> Generator[dict, None, None]:
+    """Indeed Israel RSS — https://il.indeed.com — no auth required."""
+    import urllib.parse
+    import xml.etree.ElementTree as ET
+    seen: set[str] = set()
+
+    for query in queries:
+        q_enc = urllib.parse.quote_plus(query)
+        url = f"https://il.indeed.com/rss?q={q_enc}&l=Israel&sort=date&fromage=30"
+        try:
+            resp = httpx.get(url, headers=HEADERS, timeout=15)
+            resp.raise_for_status()
+            root = ET.fromstring(resp.content)
+
+            for item in root.findall(".//item"):
+                link_el  = item.find("link")
+                title_el = item.find("title")
+                desc_el  = item.find("description")
+
+                jurl = (link_el.text or "").strip() if link_el is not None else ""
+                if not jurl or jurl in seen:
+                    continue
+                seen.add(jurl)
+
+                raw = (title_el.text or query).strip() if title_el is not None else query
+                # Indeed format: "Title - Company - City, Country"
+                parts   = raw.split(" - ")
+                title   = parts[0].strip() if parts else raw
+                company = parts[1].strip() if len(parts) >= 2 else ""
+                loc     = parts[2].strip() if len(parts) >= 3 else "Israel"
+
+                desc = ""
+                if desc_el is not None and desc_el.text:
+                    desc = html.unescape(re.sub(r"<[^>]+>", " ", desc_el.text))
+
+                jk = re.search(r'jk=([a-z0-9]+)', jurl)
+                ext_id = jk.group(1) if jk else jurl[-16:]
+
+                yield {
+                    "source":      "Indeed IL",
+                    "external_id": ext_id,
+                    "title":       title,
+                    "company":     company,
+                    "location":    loc,
+                    "salary":      "",
+                    "url":         jurl,
+                    "description": desc,
+                }
+        except Exception as e:
+            print(f"  [Indeed IL] Error for '{query}': {e}")
+        time.sleep(0.4)
+
+
+# ---------------------------------------------------------------------------
+# Source 13: AllJobs (Israel's largest job board — internal JSON API)
+# ---------------------------------------------------------------------------
+
+def search_alljobs(queries: list[str]) -> Generator[dict, None, None]:
+    """AllJobs.co.il — internal search API (no auth required)."""
+    seen: set[str] = set()
+
+    for query in queries:
+        for page in range(1, 3):
+            try:
+                resp = httpx.get(
+                    "https://www.alljobs.co.il/SiteApi/Searches/SearchJobsResults",
+                    params={"search": query, "page": page,
+                            "location": "", "type": "", "field": "", "fromdate": ""},
+                    headers={**HEADERS,
+                             "Referer":          "https://www.alljobs.co.il/",
+                             "X-Requested-With": "XMLHttpRequest"},
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+
+                items: list = []
+                if isinstance(data, list):
+                    items = data
+                elif isinstance(data, dict):
+                    items = (data.get("Jobs") or data.get("jobs")
+                             or data.get("results") or [])
+                if not items:
+                    break
+
+                for item in items:
+                    job_id = str(item.get("Id") or item.get("id")
+                                 or item.get("JobId") or "")
+                    if not job_id:
+                        continue
+                    jurl = f"https://www.alljobs.co.il/Job.aspx?jobId={job_id}"
+                    if jurl in seen:
+                        continue
+                    seen.add(jurl)
+
+                    title   = (item.get("Title") or item.get("title")
+                               or item.get("JobTitle") or query)
+                    company = (item.get("Company") or item.get("company")
+                               or item.get("CompanyName") or "")
+                    city    = (item.get("City") or item.get("city")
+                               or item.get("Location") or "Israel")
+                    raw_desc = item.get("Description") or item.get("description") or ""
+                    desc    = html.unescape(re.sub(r"<[^>]+>", " ", str(raw_desc))) if raw_desc else ""
+                    loc     = (f"{city}, Israel"
+                               if city and "israel" not in city.lower() else city)
+
+                    yield {
+                        "source":      "AllJobs",
+                        "external_id": job_id,
+                        "title":       title,
+                        "company":     company,
+                        "location":    loc,
+                        "salary":      "",
+                        "url":         jurl,
+                        "description": desc,
+                    }
+
+                time.sleep(0.4)
+            except Exception as e:
+                print(f"  [AllJobs] Error for '{query}' page {page}: {e}")
+                break
+
+
+# ---------------------------------------------------------------------------
 # Main search function
 # ---------------------------------------------------------------------------
 
@@ -712,31 +802,72 @@ class RateLimited(Exception):
     pass
 
 
+# Israeli city / location keywords used to filter search results
+_ISRAEL_CITIES = {
+    "israel", "tel aviv", "tel-aviv", "tlv", "ramat gan", "herzliya", "haifa",
+    "beer sheva", "be'er sheva", "jerusalem", "rishon lezion", "petah tikva",
+    "netanya", "rehovot", "holon", "bnei brak", "ashdod", "ashkelon",
+    "ra'anana", "kfar saba", "modi'in", "eilat", "lod", "ramla",
+    "givatayim", "kiryat", "hod hasharon", "yavne", "bat yam",
+    "center, israel", "north, israel", "south, israel",
+}
+_REMOTE_WORDS = {"remote", "anywhere", "worldwide", "distributed", "wfh"}
+
+
+def _is_israel_relevant(job: dict) -> bool:
+    """Return True for Israeli-location jobs or remote jobs (valid for Israeli workers)."""
+    src  = job.get("source", "")
+    loc  = (job.get("location") or "").lower()
+    desc = (job.get("description") or "")[:300].lower()
+    # Israeli-native boards always pass
+    if src in ("Drushim", "AllJobs", "Indeed IL"):
+        return True
+    if any(kw in loc  for kw in _REMOTE_WORDS): return True
+    if any(kw in desc for kw in _REMOTE_WORDS): return True
+    if any(city in loc for city in _ISRAEL_CITIES): return True
+    return False
+
+
 def search_all_sources(
     queries: list[str],
     sources: list[str] | None = None,
     remote_only: bool = False,
+    israel_only: bool = False,
 ) -> list[dict]:
     """
     Search all enabled sources in parallel and return de-duplicated job listings.
-    Sources run concurrently — total time ≈ slowest single source, not sum of all.
+
+    israel_only — use Israeli job boards + global remote boards, then filter
+                  results to Israel-based or remote positions.
+    remote_only — keep only jobs tagged remote/worldwide.
     """
-    all_sources = ["remoteok", "arbeitnow", "themuse", "adzuna", "hn", "remotive",
-                   "jobicy", "workingnomads", "himalayas", "drushim"]
-    enabled = set(s.lower() for s in (sources or all_sources))
+    all_sources = [
+        "remoteok", "arbeitnow", "themuse", "adzuna", "hn",
+        "remotive", "jobicy", "workingnomads", "himalayas",
+        "drushim", "indeed_il", "alljobs",
+    ]
 
     source_map = {
-        "remoteok":      ("RemoteOK",         lambda: list(search_remoteok(queries)),       True),
-        "arbeitnow":     ("Arbeitnow",         lambda: list(search_arbeitnow(queries)),      True),
-        "themuse":       ("The Muse",          lambda: list(search_themuse(queries)),        True),
-        "adzuna":        ("Adzuna",            lambda: list(search_adzuna(queries)),         bool(os.environ.get("ADZUNA_APP_ID"))),
-        "hn":            ("HN Who's Hiring",   lambda: list(search_hn_hiring(queries)),      True),
-        "remotive":      ("Remotive",          lambda: list(search_remotive(queries)),       True),
-        "jobicy":        ("Jobicy",            lambda: list(search_jobicy(queries)),         True),
-        "workingnomads": ("Working Nomads",    lambda: list(search_workingnomads(queries)),  True),
-        "himalayas":     ("Himalayas",         lambda: list(search_himalayas(queries)),      True),
-        "drushim":       ("Drushim (IL)",      lambda: list(search_drushim(queries)),        True),
+        "remoteok":      ("RemoteOK",       lambda: list(search_remoteok(queries)),        True),
+        "arbeitnow":     ("Arbeitnow",      lambda: list(search_arbeitnow(queries)),       True),
+        "themuse":       ("The Muse",       lambda: list(search_themuse(queries)),         True),
+        "adzuna":        ("Adzuna",         lambda: list(search_adzuna(queries)),          bool(os.environ.get("ADZUNA_APP_ID"))),
+        "hn":            ("HN Hiring",      lambda: list(search_hn_hiring(queries)),       True),
+        "remotive":      ("Remotive",       lambda: list(search_remotive(queries)),        True),
+        "jobicy":        ("Jobicy",         lambda: list(search_jobicy(queries)),          True),
+        "workingnomads": ("Working Nomads", lambda: list(search_workingnomads(queries)),   True),
+        "himalayas":     ("Himalayas",      lambda: list(search_himalayas(queries)),       True),
+        "drushim":       ("Drushim",        lambda: list(search_drushim(queries)),         True),
+        "indeed_il":     ("Indeed IL",      lambda: list(search_indeed_israel(queries)),   True),
+        "alljobs":       ("AllJobs",        lambda: list(search_alljobs(queries)),         True),
     }
+
+    # Israel mode: Israeli boards + global remote boards (remote jobs are valid for IL workers)
+    if israel_only and sources is None:
+        enabled = {"drushim", "indeed_il", "alljobs",
+                   "remoteok", "remotive", "jobicy", "himalayas"}
+    else:
+        enabled = set(s.lower() for s in (sources or all_sources))
 
     queue = [n for n in all_sources if n in enabled and source_map[n][2]]
 
@@ -757,7 +888,6 @@ def search_all_sources(
             print(f"  [{label}] Error: {e}")
             return name, []
 
-    # Run all sources concurrently — max 6 threads to avoid overwhelming the network
     with ThreadPoolExecutor(max_workers=6) as executor:
         futures = {executor.submit(run_source, name): name for name in queue}
         for future in as_completed(futures, timeout=180):
@@ -777,7 +907,10 @@ def search_all_sources(
             seen_urls.add(url)
             jobs.append(job)
 
-    if remote_only:
+    # Location filtering
+    if israel_only:
+        jobs = [j for j in jobs if _is_israel_relevant(j)]
+    elif remote_only:
         keywords = {"remote", "anywhere", "worldwide", "distributed", "wfh"}
         jobs = [
             j for j in jobs
