@@ -838,7 +838,9 @@ _PAGES = ["Dashboard", "Search", "Matched Jobs", "Apply", "Tracker", "Settings",
 def _go(page_fragment: str):
     for p in _PAGES:
         if page_fragment in p:
-            st.session_state["nav_page"] = p
+            st.session_state["nav_page"]    = p
+            st.session_state["sidebar_nav"] = p   # sync radio widget before rerun
+            st.session_state["_nav_from_go"] = True
             break
     st.rerun()
 
@@ -850,11 +852,15 @@ with st.sidebar:
         '<div style="font-size:1rem;font-weight:600;color:#e6edf3;margin-bottom:1.5rem;letter-spacing:-0.01em">Job Bot</div>',
         unsafe_allow_html=True,
     )
+    # If _go() was called, force the radio to the target page before it renders
+    if st.session_state.pop("_nav_from_go", False):
+        st.session_state["sidebar_nav"] = st.session_state["nav_page"]
+
     page = st.radio(
         "nav",
         _PAGES,
-        index=_PAGES.index(st.session_state["nav_page"]),
         label_visibility="collapsed",
+        key="sidebar_nav",
     )
     st.session_state["nav_page"] = page
     st.markdown("---")
@@ -1395,6 +1401,15 @@ elif "Settings" in page:
 
     cfg = load_config()
 
+    # Save button at the top — all widget values are still collected below before saving
+    _save_top = st.button("Save settings", type="primary", key="save_settings_top",
+                          use_container_width=False)
+    st.markdown(
+        '<div style="font-size:0.75rem;color:#3d5070;margin:-6px 0 18px">'
+        'Changes take effect after saving.</div>',
+        unsafe_allow_html=True,
+    )
+
     with st.expander("Resume", expanded=True):
         existing_resume = database.get_resume_content()
         st.caption(f"{len(existing_resume):,} characters stored" if existing_resume else "No resume uploaded yet.")
@@ -1417,7 +1432,7 @@ elif "Settings" in page:
                 st.error(f"Could not parse {uploaded.name}.")
 
     with st.expander("Job categories", expanded=True):
-        st.caption("Select categories to automatically populate your search titles.")
+        st.caption("Select categories to populate your search titles, then click Save settings.")
         _cats = json.loads((BOT_DIR / "job_categories.json").read_text(encoding="utf-8"))
         saved_cats = cfg.get("selected_categories", [])
         selected_cats = []
@@ -1507,7 +1522,7 @@ elif "Settings" in page:
 
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
-    if st.button("Save settings", type="primary"):
+    if st.button("Save settings", type="primary", key="save_settings_bottom") or _save_top:
         cfg["selected_categories"]   = selected_cats
         cfg["custom_job_titles"]     = custom_titles
         cfg["job_titles"]            = all_titles
