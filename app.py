@@ -996,37 +996,32 @@ if "Dashboard" in page:
     _mlabel = "Score with AI" if _has_ai else "Score matches"
     _mcmd   = ["rematch", "--ai"] if _has_ai else ["rematch"]
 
+    def _step_card(num, icon_key, title, desc, s, l):
+        _ic = (":material/check_circle:"        if s == "done"
+               else ":material/radio_button_checked:" if s == "active"
+               else ":material/radio_button_unchecked:")
+        _bc = "green" if s == "done" else "blue" if s == "active" else "gray"
+        with st.container(border=True):
+            st.caption(f"Step {num}")
+            st.markdown(f"{_ic} **{title}**")
+            st.caption(desc)
+            if l: st.badge(l, color=_bc)
+
     sc1, sc2, sc3, sc4 = st.columns(4)
     with sc1:
-        with st.container(border=True):
-            _ic0 = ":material/check_circle:" if s0 == "done" else ":material/radio_button_checked:" if s0 == "active" else ":material/radio_button_unchecked:"
-            st.markdown(f"{_ic0} **Step 1 — Upload resume**")
-            st.caption("Settings → Resume tab. Needed for scoring.")
-            if l0: st.badge(l0, color="green" if s0 == "done" else "blue" if s0 == "active" else "gray")
+        _step_card(1, "upload_file",  "Upload resume",  "Settings → Resume. Needed for scoring.", s0, l0)
         if st.button("Open Settings →", key="sc1", use_container_width=True): _go("Settings")
     with sc2:
-        with st.container(border=True):
-            _ic1 = ":material/check_circle:" if s1 == "done" else ":material/radio_button_checked:" if s1 == "active" else ":material/radio_button_unchecked:"
-            st.markdown(f"{_ic1} **Step 2 — Search jobs**")
-            st.caption("Scan Israeli job boards and global remote listings.")
-            if l1: st.badge(l1, color="green" if s1 == "done" else "blue" if s1 == "active" else "gray")
-        if st.button("Open Search →", key="sc2", use_container_width=True): _go("Search")
+        _step_card(2, "search",       "Search jobs",    "Scan Israeli boards and remote listings.", s1, l1)
+        if st.button("Open Search →",  key="sc2", use_container_width=True): _go("Search")
     with sc3:
-        with st.container(border=True):
-            _ic2 = ":material/check_circle:" if s2 == "done" else ":material/radio_button_checked:" if s2 == "active" else ":material/radio_button_unchecked:"
-            st.markdown(f"{_ic2} **Step 3 — Score matches**")
-            st.caption("AI scoring (Llama 3)." if _has_ai else "Rule-based scoring (free).")
-            if l2: st.badge(l2, color="green" if s2 == "done" else "blue" if s2 == "active" else "gray")
+        _step_card(3, "model_training","Score matches",  "AI scoring (Llama 3)." if _has_ai else "Rule-based scoring (free).", s2, l2)
         if st.button(_mlabel, key="sc3_btn", use_container_width=True, disabled=not _has_jobs):
             if _has_resume:
                 launch_task([PYTHON, "-u", "main.py"] + _mcmd, "task_rematch")
     with sc4:
-        with st.container(border=True):
-            _ic3 = ":material/check_circle:" if s3 == "done" else ":material/radio_button_checked:" if s3 == "active" else ":material/radio_button_unchecked:"
-            st.markdown(f"{_ic3} **Step 4 — Apply**")
-            st.caption("Review matched jobs and send applications.")
-            if l3: st.badge(l3, color="green" if s3 == "done" else "blue" if s3 == "active" else "gray")
-        if st.button("Open Apply →", key="sc4", use_container_width=True, disabled=not _has_matches): _go("Apply")
+        _step_card(4, "send",         "Apply",          "Review matched jobs and apply.", s3, l3)
+        if st.button("Open Apply →",   key="sc4", use_container_width=True, disabled=not _has_matches): _go("Apply")
 
     with st.container(horizontal=True):
         st.metric(":material/search: Found",    stats["total"],           border=True)
@@ -1096,12 +1091,12 @@ elif "Search" in page:
             t for t in st.session_state["search_title_default"] if t in all_titles
         ]
 
-        _tc1, _tc2, _ = st.columns([1, 1, 8])
-        if _tc1.button("Select all", key="btn_sel_all"):
+        _tc1, _tc2, _ = st.columns([2, 2, 6])
+        if _tc1.button("Select all", key="btn_sel_all", use_container_width=True):
             st.session_state["search_title_default"] = list(all_titles)
             st.session_state["search_title_ver"] += 1
             st.rerun()
-        if _tc2.button("Clear all", key="btn_clr_all"):
+        if _tc2.button("Clear all", key="btn_clr_all", use_container_width=True):
             st.session_state["search_title_default"] = []
             st.session_state["search_title_ver"] += 1
             st.rerun()
