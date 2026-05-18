@@ -1009,19 +1009,19 @@ if "Dashboard" in page:
 
     sc1, sc2, sc3, sc4 = st.columns(4)
     with sc1:
-        _step_card(1, "upload_file",  "Upload resume",  "Settings → Resume. Needed for scoring.", s0, l0)
+        _step_card(1, "upload_file",   "Upload resume",  "Settings → Resume tab.", s0, l0)
         if st.button("Open Settings →", key="sc1", use_container_width=True): _go("Settings")
     with sc2:
-        _step_card(2, "search",       "Search jobs",    "Scan Israeli boards and remote listings.", s1, l1)
-        if st.button("Open Search →",  key="sc2", use_container_width=True): _go("Search")
+        _step_card(2, "search",        "Search jobs",    "Israeli & remote boards.", s1, l1)
+        if st.button("Open Search →",   key="sc2", use_container_width=True): _go("Search")
     with sc3:
-        _step_card(3, "model_training","Score matches",  "AI scoring (Llama 3)." if _has_ai else "Rule-based scoring (free).", s2, l2)
+        _step_card(3, "model_training", "Score matches",  "AI scoring (Llama 3)." if _has_ai else "Rule-based (free).", s2, l2)
         if st.button(_mlabel, key="sc3_btn", use_container_width=True, disabled=not _has_jobs):
             if _has_resume:
                 launch_task([PYTHON, "-u", "main.py"] + _mcmd, "task_rematch")
     with sc4:
-        _step_card(4, "send",         "Apply",          "Review matched jobs and apply.", s3, l3)
-        if st.button("Open Apply →",   key="sc4", use_container_width=True, disabled=not _has_matches): _go("Apply")
+        _step_card(4, "send",          "Apply",          "Review and apply.", s3, l3)
+        if st.button("Open Apply →",    key="sc4", use_container_width=True, disabled=not _has_matches): _go("Apply")
 
     with st.container(horizontal=True):
         st.metric(":material/search: Found",    stats["total"],           border=True)
