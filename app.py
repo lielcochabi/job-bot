@@ -986,55 +986,65 @@ if "Dashboard" in page:
 elif "Search" in page:
     _guest_block()
     st.markdown('<div class="page-title">Search</div>', unsafe_allow_html=True)
-    st.markdown('<div class="page-sub">Search → Match → Apply. Each step is separate.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-sub">Search job boards for new listings. Configure sources in Settings.</div>', unsafe_allow_html=True)
 
     cfg = load_config()
     all_titles = cfg.get("job_titles", [])
+    selected_titles = []
 
-    st.markdown('<div class="section-label">Job titles</div>', unsafe_allow_html=True)
-    selected_titles = st.multiselect(
-        "titles",
-        options=all_titles,
-        default=all_titles,
-        label_visibility="collapsed",
-    )
+    if not all_titles:
+        st.info(
+            "No job titles configured yet. "
+            "Go to **Settings → Job categories**, pick your categories, then click **Save settings**."
+        )
+    else:
+        st.markdown('<div class="section-label">Job titles</div>', unsafe_allow_html=True)
+
+        # Version counter: incrementing forces the multiselect to re-init with the new default
+        if "search_title_ver" not in st.session_state:
+            st.session_state["search_title_ver"] = 0
+        if "search_title_default" not in st.session_state:
+            st.session_state["search_title_default"] = list(all_titles)
+        # Drop stale entries if config changed
+        st.session_state["search_title_default"] = [
+            t for t in st.session_state["search_title_default"] if t in all_titles
+        ]
+
+        _tc1, _tc2, _ = st.columns([1, 1, 8])
+        if _tc1.button("Select all", key="btn_sel_all"):
+            st.session_state["search_title_default"] = list(all_titles)
+            st.session_state["search_title_ver"] += 1
+            st.rerun()
+        if _tc2.button("Clear all", key="btn_clr_all"):
+            st.session_state["search_title_default"] = []
+            st.session_state["search_title_ver"] += 1
+            st.rerun()
+
+        selected_titles = st.multiselect(
+            "titles",
+            options=all_titles,
+            default=st.session_state["search_title_default"],
+            label_visibility="collapsed",
+            key=f"search_ms_{st.session_state['search_title_ver']}",
+        )
+        # Persist current selection so it survives navigation and reruns
+        st.session_state["search_title_default"] = list(selected_titles)
 
     remote_only = st.checkbox("Remote only", value=cfg.get("remote_only", False))
 
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
-    st.markdown('<div class="section-label">Sources</div>', unsafe_allow_html=True)
 
-    SOURCE_MAP = {
-        "RemoteOK":        "remoteok",
-        "Arbeitnow":       "arbeitnow",
-        "The Muse":        "themuse",
-        "HN Who's Hiring": "hn",
-        "Remotive":        "remotive",
-        "Jobicy":          "jobicy",
-        "Working Nomads":  "workingnomads",
-        "Himalayas":       "himalayas",
-    }
-
-    cols = st.columns(4)
-    selected_sources = {}
-    for i, (label, key) in enumerate(SOURCE_MAP.items()):
-        selected_sources[key] = cols[i % 4].checkbox(label, value=True, key=f"src_{key}")
-
-    enabled_sources = [k for k, v in selected_sources.items() if v]
-
-    st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
-
-    can_search = bool(selected_titles and enabled_sources)
-    if not selected_titles:
+    _can_search = bool(selected_titles)
+    if all_titles and not selected_titles:
         st.warning("Select at least one job title.")
-    elif not enabled_sources:
-        st.warning("Select at least one source.")
 
-    if st.button("Start search", type="primary", disabled=not can_search):
+    if st.button("Start search", type="primary", disabled=not _can_search):
+        enabled_sources = cfg.get("selected_sources", [])
         cmd = [PYTHON, "-u", "main.py", "search"]
         for q in selected_titles:
             cmd.extend(["-q", q])
-        cmd.extend(["--sources", ",".join(enabled_sources)])
+        if enabled_sources:
+            cmd.extend(["--sources", ",".join(enabled_sources)])
         if remote_only:
             cmd.append("--remote")
         launch_task(cmd, "task_search")
@@ -1417,6 +1427,26 @@ elif "Settings" in page:
         all_titles = cat_titles + [t for t in custom_titles if t not in cat_titles]
         st.caption(f"{len(all_titles)} total titles active")
 
+    with st.expander("Job sources", expanded=False):
+        st.caption("Select which job boards to search. All 8 sources are enabled by default.")
+        _SOURCE_MAP = {
+            "RemoteOK":        "remoteok",
+            "Arbeitnow":       "arbeitnow",
+            "The Muse":        "themuse",
+            "HN Who's Hiring": "hn",
+            "Remotive":        "remotive",
+            "Jobicy":          "jobicy",
+            "Working Nomads":  "workingnomads",
+            "Himalayas":       "himalayas",
+        }
+        _all_src_keys = list(_SOURCE_MAP.values())
+        _saved_sources = cfg.get("selected_sources", _all_src_keys)
+        selected_sources_settings = []
+        _src_cols = st.columns(4)
+        for _si, (_slabel, _skey) in enumerate(_SOURCE_MAP.items()):
+            if _src_cols[_si % 4].checkbox(_slabel, value=_skey in _saved_sources, key=f"src_{_skey}"):
+                selected_sources_settings.append(_skey)
+
     with st.expander("Company blacklist", expanded=False):
         st.caption("Jobs from these companies will be skipped automatically.")
         blacklist_raw = st.text_area("One per line", value="\n".join(cfg.get("blacklisted_companies", [])),
@@ -1451,6 +1481,7 @@ elif "Settings" in page:
         cfg["selected_categories"]   = selected_cats
         cfg["custom_job_titles"]     = custom_titles
         cfg["job_titles"]            = all_titles
+        cfg["selected_sources"]      = selected_sources_settings
         cfg["blacklisted_companies"] = [t.strip() for t in blacklist_raw.splitlines() if t.strip()]
         cfg["match_threshold"]  = threshold
         cfg["remote_only"]      = remote_only
