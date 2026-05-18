@@ -1043,15 +1043,15 @@ elif "Search" in page:
         st.session_state["search_loc"] = _saved if _saved in _loc_opts else "Israel (on-site + remote)"
 
     st.markdown('<div class="section-label">Location</div>', unsafe_allow_html=True)
-    _loc_mode = st.radio(
+    _loc_mode = st.segmented_control(
         "loc_mode",
         _loc_opts,
-        index=_loc_opts.index(st.session_state["search_loc"]),
-        horizontal=True,
+        default=st.session_state["search_loc"],
         label_visibility="collapsed",
         key="search_loc_radio",
     )
-    st.session_state["search_loc"] = _loc_mode
+    if _loc_mode:
+        st.session_state["search_loc"] = _loc_mode
 
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
@@ -1499,11 +1499,10 @@ elif "Settings" in page:
         _cur_loc    = cfg.get("location_mode", "Israel (on-site + remote)")
         if _cur_loc not in _loc_opts_s:
             _cur_loc = "Israel (on-site + remote)"
-        location_mode = st.radio(
+        location_mode = st.segmented_control(
             "Default location for searches",
             _loc_opts_s,
-            index=_loc_opts_s.index(_cur_loc),
-            horizontal=True,
+            default=_cur_loc,
         )
 
     with st.expander("Your profile", expanded=True):
@@ -1538,7 +1537,7 @@ elif "Settings" in page:
             "linkedin_handle": linkedin, "summary": summary,
         }
         save_config(cfg)
-        st.success("Settings saved.")
+        st.toast("Settings saved.", icon=":material/check:")
 
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
     with st.expander("Database", expanded=False):
