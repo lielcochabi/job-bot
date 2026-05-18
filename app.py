@@ -829,7 +829,6 @@ def _go(page_fragment: str):
     for p in _PAGES:
         if page_fragment in p:
             st.session_state["nav_page"] = p
-            st.session_state["nav_radio"] = p   # keep radio in sync
             break
     st.rerun()
 
@@ -846,7 +845,6 @@ with st.sidebar:
         _PAGES,
         index=_PAGES.index(st.session_state["nav_page"]),
         label_visibility="collapsed",
-        key="nav_radio",
     )
     st.session_state["nav_page"] = page
     st.markdown("---")
