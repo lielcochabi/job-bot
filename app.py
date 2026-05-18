@@ -789,11 +789,12 @@ def live_task_panel(task_key: str, title: str):
 # ---------------------------------------------------------------------------
 
 def load_config() -> dict:
-    return database.load_config()
+    return _load_config_cached(_username)
 
 
 def save_config(cfg: dict):
     database.save_config(cfg)
+    _load_config_cached.clear()   # invalidate cache after save
 
 
 def score_color(score: float) -> str:
@@ -819,8 +820,16 @@ def _get_stats(username: str) -> dict:
 def _has_resume_cached(username: str) -> bool:
     return bool(database.get_resume_content())
 
+@st.cache_data(ttl=3600, show_spinner=False)   # run at most once per hour
+def _cleanup_once(username: str) -> int:
+    return database.cleanup_old_jobs(days=7)
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _load_config_cached(username: str) -> dict:
+    return database.load_config()
+
 _init_db_once()
-database.cleanup_old_jobs(days=7)
+_cleanup_once(_username)
 stats = _get_stats(_username)
 
 _PAGES = ["Dashboard", "Search", "Matched Jobs", "Apply", "Tracker", "Settings", "Help"]
@@ -896,6 +905,8 @@ if "Dashboard" in page:
 
     s0,c0,l0 = _step(0); s1,c1,l1 = _step(1)
     s2,c2,l2 = _step(2); s3,c3,l3 = _step(3)
+    _mlabel = "Score with AI" if _has_ai else "Score matches"
+    _mcmd   = ["rematch", "--ai"] if _has_ai else ["rematch"]
 
     sc1, sc2, sc3, sc4 = st.columns(4)
     with sc1:
@@ -906,10 +917,10 @@ if "Dashboard" in page:
         if st.button("Open Search →", key="sc2", use_container_width=True): _go("Search")
     with sc3:
         st.markdown(f'<div class="step-card {s2}"><div class="step-num" style="color:{c2}">Step 3</div><div class="step-title">Score matches</div><div class="step-desc">{"AI scoring (Llama 3)." if _has_ai else "Rule-based scoring."}</div><span class="step-status" style="color:{c2}">{l2}</span></div>', unsafe_allow_html=True)
-        if st.button(_mlabel if "_mlabel" in dir() else "Score now", key="sc3_btn",
+        if st.button(_mlabel, key="sc3_btn",
                      use_container_width=True, disabled=not _has_jobs):
             if _has_resume:
-                launch_task([PYTHON, "-u", "main.py"] + (["rematch","--ai"] if _has_ai else ["rematch"]), "task_rematch")
+                launch_task([PYTHON, "-u", "main.py"] + _mcmd, "task_rematch")
     with sc4:
         st.markdown(f'<div class="step-card {s3}"><div class="step-num" style="color:{c3}">Step 4</div><div class="step-title">Apply</div><div class="step-desc">Review matched jobs and send applications.</div><span class="step-status" style="color:{c3}">{l3}</span></div>', unsafe_allow_html=True)
         if st.button("Open Apply →", key="sc4", use_container_width=True, disabled=not _has_matches): _go("Apply")
@@ -934,8 +945,6 @@ if "Dashboard" in page:
     col1, col2, col3, col4 = st.columns(4)
     if col1.button("Search jobs",    use_container_width=True,
                    type="primary" if _active == 1 else "secondary"): _go("Search")
-    _mlabel = "Score with AI" if _has_ai else "Score matches"
-    _mcmd   = ["rematch", "--ai"] if _has_ai else ["rematch"]
     if col2.button(_mlabel, use_container_width=True,
                    type="primary" if _active == 2 else "secondary",
                    disabled=not _has_jobs):
