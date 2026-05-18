@@ -30,15 +30,22 @@ COLUMNS = [
 STATUS_OPTIONS = ["Applied", "Manual - Pending", "Interview", "Accepted", "Denied"]
 
 
-def _user_email() -> str:
-    """Get the current user's email from env."""
+def _current_user() -> str:
+    """Return a stable per-user key for the tracker file.
+    Priority: JOB_BOT_USERNAME env var (set by both the UI and CLI subprocesses)
+    → NOTIFY_EMAIL secret → literal "default".
+    """
+    import os
+    uname = os.environ.get("JOB_BOT_USERNAME", "")
+    if uname and uname not in ("__guest__", "default", ""):
+        return uname
     from secrets_manager import get_secret
     return get_secret("NOTIFY_EMAIL", "default")
 
 
-def _tracker_path(email: str) -> Path:
+def _tracker_path(user: str) -> Path:
     """Return path to the user's tracker Excel file."""
-    safe = re.sub(r"[^\w]", "_", email.lower())
+    safe = re.sub(r"[^\w]", "_", user.lower())
     return TRACKER_DIR / f"tracker_{safe}.xlsx"
 
 
@@ -107,15 +114,16 @@ def _status_color(status: str) -> str:
     }.get(status, "FFFFFF")
 
 
-def add_job(job: dict, method: str) -> Path:
+def add_job(job: dict, method: str, username: str = "") -> Path:
     """
     Add a job entry to the user's tracker Excel file.
     Returns the path to the file.
+    Pass username explicitly when calling from the UI; leave blank in subprocess context.
     """
     from openpyxl.styles import PatternFill, Alignment, Font, Border, Side
 
-    email    = _user_email()
-    path     = _tracker_path(email)
+    user = username or _current_user()
+    path = _tracker_path(user)
     wb, ws   = _load_workbook(path)
 
     # Determine status
@@ -176,7 +184,7 @@ def add_job(job: dict, method: str) -> Path:
     return path
 
 
-def update_status(url: str, new_status: str, notes: str = "") -> bool:
+def update_status(url: str, new_status: str, notes: str = "", username: str = "") -> bool:
     """
     Update the status (and optionally notes) of a job row by URL.
     Returns True if found and updated.
@@ -184,8 +192,8 @@ def update_status(url: str, new_status: str, notes: str = "") -> bool:
     import openpyxl
     from openpyxl.styles import PatternFill
 
-    email = _user_email()
-    path  = _tracker_path(email)
+    user = username or _current_user()
+    path = _tracker_path(user)
     if not path.exists():
         return False
 
@@ -210,11 +218,10 @@ def update_status(url: str, new_status: str, notes: str = "") -> bool:
     return updated
 
 
-def get_all_jobs(email: str = "") -> list[dict]:
+def get_all_jobs(username: str = "") -> list[dict]:
     """Return all jobs from the tracker as a list of dicts."""
-    if not email:
-        email = _user_email()
-    path = _tracker_path(email)
+    user = username or _current_user()
+    path = _tracker_path(user)
     if not path.exists():
         return []
 

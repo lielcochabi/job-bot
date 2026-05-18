@@ -821,15 +821,16 @@ def _has_resume_cached(username: str) -> bool:
     return bool(database.get_resume_content())
 
 @st.cache_data(ttl=3600, show_spinner=False)   # run at most once per hour
-def _cleanup_once(username: str) -> int:
-    return database.cleanup_old_jobs(days=7)
+def _cleanup_once(username: str, expiry_days: int = 30) -> int:
+    return database.cleanup_old_jobs(days=expiry_days)
 
 @st.cache_data(ttl=60, show_spinner=False)
 def _load_config_cached(username: str) -> dict:
     return database.load_config()
 
 _init_db_once()
-_cleanup_once(_username)
+_startup_cfg = database.load_config()
+_cleanup_once(_username, int(_startup_cfg.get("job_expiry_days", 30)))
 stats = _get_stats(_username)
 
 _PAGES = ["Dashboard", "Search", "Matched Jobs", "Apply", "Tracker", "Settings", "Help"]
@@ -958,9 +959,9 @@ if "Dashboard" in page:
     if col4.button("Full pipeline",  use_container_width=True, disabled=not _has_resume):
         launch_task([PYTHON, "-u", "main.py", "run", "--auto"], "task_run")
 
-    for key, label in [("task_run","Full Pipeline"),("task_rematch","Score"),
-                        ("task_rematch2","Match"),("task_search","Search"),("task_match","Match")]:
-        live_task_panel(key, label)
+    for key, label in [("task_run", "Full Pipeline"), ("task_rematch", "Score"), ("task_search", "Search")]:
+        if st.session_state.get(key):   # only register fragment when task exists
+            live_task_panel(key, label)
 
     if _has_matches:
         st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
@@ -1063,6 +1064,7 @@ elif "Search" in page:
             cmd.extend(["--location", "israel"])
         elif _loc_mode == "Remote only":
             cmd.append("--remote")
+        st.session_state.pop("search_result_shown", None)   # clear so results refresh after this new search
         launch_task(cmd, "task_search")
 
     live_task_panel("task_search", "Search")
@@ -1308,7 +1310,7 @@ elif "Tracker" in page:
     st.markdown('<div class="page-title">Tracker</div>', unsafe_allow_html=True)
     st.markdown('<div class="page-sub">Update outcomes as you hear back from companies.</div>', unsafe_allow_html=True)
 
-    jobs = _tracker.get_all_jobs()
+    jobs = _tracker.get_all_jobs(username=_username)
 
     if not jobs:
         st.info("No applications tracked yet.")
@@ -1325,11 +1327,12 @@ elif "Tracker" in page:
         </div>
         """, unsafe_allow_html=True)
 
-        tracker_files = _tracker.list_tracker_files()
-        if tracker_files:
-            latest = tracker_files[-1]
-            with open(latest, "rb") as f:
-                st.download_button("Download Excel", data=f.read(), file_name=latest.name,
+        import re as _re
+        _safe_user = _re.sub(r"[^\w]", "_", _username.lower())
+        _user_tracker = _tracker.TRACKER_DIR / f"tracker_{_safe_user}.xlsx"
+        if _user_tracker.exists():
+            with open(_user_tracker, "rb") as f:
+                st.download_button("Download Excel", data=f.read(), file_name=_user_tracker.name,
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
         st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
@@ -1374,7 +1377,7 @@ elif "Tracker" in page:
                     key=f"notes_{i}", label_visibility="collapsed", placeholder="Notes...")
             with col_save:
                 if st.button("Save", key=f"save_{i}", use_container_width=True):
-                    _tracker.update_status(url, new_status, notes)
+                    _tracker.update_status(url, new_status, notes, username=_username)
                     st.rerun()
             with col_open:
                 if url:

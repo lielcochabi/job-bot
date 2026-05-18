@@ -27,11 +27,23 @@ def inject_all_into_env() -> None:
     """
     Call this once at app startup to push all st.secrets into os.environ
     so that any code doing os.environ.get(...) also picks them up.
+    Handles both flat keys ("KEY = value") and nested TOML sections ([section] KEY = value).
     """
     try:
         import streamlit as st
-        for key, val in st.secrets.items():
-            if isinstance(val, str) and key not in os.environ:
-                os.environ[key] = val
+
+        def _flatten(mapping, prefix=""):
+            for k, v in mapping.items():
+                full_key = f"{prefix}{k}" if not prefix else f"{prefix}_{k}"
+                if isinstance(v, str):
+                    if full_key not in os.environ:
+                        os.environ[full_key] = v
+                    # Also inject without prefix for top-level keys
+                    if not prefix and k not in os.environ:
+                        os.environ[k] = v
+                elif hasattr(v, "items"):
+                    _flatten(v, prefix=k.upper() + "_" if not prefix else prefix + k.upper() + "_")
+
+        _flatten(st.secrets)
     except Exception:
         pass

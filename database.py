@@ -61,33 +61,36 @@ def upsert_job(
         return None
     db = _get_db()
     username = _uname()
-    if db.jobs.find_one({"username": username, "url": url}):
-        return None
-    result = db.jobs.insert_one({
-        "username":     username,
-        "source":       source,
-        "external_id":  external_id,
-        "title":        title,
-        "company":      company,
-        "url":          url,
-        "location":     location,
-        "salary":       salary,
-        "description":  description,
-        "requirements": "",
-        "match_score":  None,
-        "match_reason": None,
-        "status":       "found",
-        "found_at":     datetime.utcnow().isoformat(),
-        "applied_at":   None,
-        "notes":        "",
-    })
-    return str(result.inserted_id)
+    # Single atomic insert — catches duplicate URL without a separate find_one round-trip.
+    # PyMongo raises DuplicateKeyError when the unique index (username, url) is violated.
+    try:
+        result = db.jobs.insert_one({
+            "username":     username,
+            "source":       source,
+            "external_id":  external_id,
+            "title":        title,
+            "company":      company,
+            "url":          url,
+            "location":     location,
+            "salary":       salary,
+            "description":  description,
+            "requirements": "",
+            "match_score":  None,
+            "match_reason": None,
+            "status":       "found",
+            "found_at":     datetime.utcnow().isoformat(),
+            "applied_at":   None,
+            "notes":        "",
+        })
+        return str(result.inserted_id)
+    except Exception:
+        return None  # DuplicateKeyError or transient error — job already exists
 
 
-def set_match(job_id, score: float, reason: str) -> None:
+def set_match(job_id, score: float, reason: str, threshold: float = 70.0) -> None:
     from bson import ObjectId
     db = _get_db()
-    status = "matched" if score >= 70 else "skipped"
+    status = "matched" if score >= threshold else "skipped"
     db.jobs.update_one(
         {"_id": ObjectId(job_id)},
         {"$set": {"match_score": score, "match_reason": reason, "status": status}},

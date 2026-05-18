@@ -440,6 +440,8 @@ def submit_job(
 
     import tracker as _tracker
 
+    _uname = os.environ.get("JOB_BOT_USERNAME", "")
+
     # Method 1: LinkedIn Easy Apply
     if "linkedin.com" in url:
         success = apply_linkedin(job, profile, resume_path, auto)
@@ -447,7 +449,7 @@ def submit_job(
             database.set_applied(job["id"], "LinkedIn Easy Apply")
             send_notification(job, "LinkedIn Easy Apply")
             send_whatsapp(job, "LinkedIn Easy Apply")
-            xlsx = _tracker.add_job(job, "LinkedIn Easy Apply")
+            xlsx = _tracker.add_job(job, "LinkedIn Easy Apply", username=_uname)
             print(f"    [Tracker] Logged to {xlsx.name}")
             return "applied"
 
@@ -458,7 +460,7 @@ def submit_job(
             database.set_applied(job["id"], "Email")
             send_notification(job, "Email")
             send_whatsapp(job, "Email")
-            xlsx = _tracker.add_job(job, "Email")
+            xlsx = _tracker.add_job(job, "Email", username=_uname)
             print(f"    [Tracker] Logged to {xlsx.name}")
             return "applied"
 
@@ -467,7 +469,7 @@ def submit_job(
     database.set_applied(job["id"], "Manual queue")
     send_notification(job, "Added to manual queue")
     send_whatsapp(job, "Added to manual queue")
-    xlsx = _tracker.add_job(job, "Manual queue")
+    xlsx = _tracker.add_job(job, "Manual queue", username=_uname)
     print(f"    [Tracker] Logged to {xlsx.name}")
     return "queued"
 

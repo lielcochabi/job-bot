@@ -614,11 +614,12 @@ def match_all_unmatched(
         if ai_available:
             score, reason = ai_score_job(job, resume_text)
 
-        # Fall back to rule-based if AI scoring failed or was not requested
-        if score == 0.0:
+        # Fall back to rule-based only when AI genuinely failed (reason is empty).
+        # A real AI score of 0.0 has a non-empty reason — don't overwrite it.
+        if not reason:
             score, reason = match_job(job, resume_text, threshold, skill_weights, blacklisted_companies)
 
-        database.set_match(job["id"], score, reason)
+        database.set_match(job["id"], score, reason, threshold=threshold)
 
         label = "[MATCH]" if score >= threshold else "[skip] "
         if verbose:

@@ -514,7 +514,11 @@ def search_weworkremotely(queries: list[str]) -> Generator[dict, None, None]:
 def search_workingnomads(queries: list[str]) -> Generator[dict, None, None]:
     """https://www.workingnomads.com/api/exposed_jobs/ — free JSON API."""
     seen: set[str] = set()
-    categories = ["back-end", "dev-ops", "software-development", "game-development"]
+    categories = ["back-end", "dev-ops", "software-development", "game-development",
+                  "front-end", "full-stack", "data-science"]
+
+    # Build a lowercase set of query keywords for fast title/desc filtering
+    query_words = {w.lower() for q in queries for w in q.lower().split()}
 
     for category in categories:
         try:
@@ -529,13 +533,19 @@ def search_workingnomads(queries: list[str]) -> Generator[dict, None, None]:
                 jurl = item.get("url", "")
                 if not jurl or jurl in seen:
                     continue
-                seen.add(jurl)
+
                 title = item.get("title", "")
                 desc = html.unescape(re.sub(r"<[^>]+>", " ", item.get("description", "")))
 
                 if not _is_tech_job(title, desc):
                     continue
 
+                # Filter: at least one query keyword must appear in title or description
+                combined_lower = (title + " " + desc[:300]).lower()
+                if not any(w in combined_lower for w in query_words):
+                    continue
+
+                seen.add(jurl)
                 yield {
                     "source": "WorkingNomads",
                     "external_id": str(item.get("id", "")),
