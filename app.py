@@ -1380,10 +1380,35 @@ elif "Settings" in page:
             else:
                 st.error(f"Could not parse {uploaded.name}.")
 
-    with st.expander("Job titles", expanded=True):
-        titles_raw = st.text_area("One per line", value="\n".join(cfg.get("job_titles", [])),
-            height=280, label_visibility="collapsed")
-        st.caption(f"{len([t for t in titles_raw.splitlines() if t.strip()])} titles active")
+    with st.expander("Job categories", expanded=True):
+        st.caption("Select categories to automatically populate your search titles.")
+        _cats = json.loads((BOT_DIR / "job_categories.json").read_text(encoding="utf-8"))
+        saved_cats = cfg.get("selected_categories", [])
+        selected_cats = []
+        cat_cols = st.columns(3)
+        for i, cat in enumerate(_cats.keys()):
+            if cat_cols[i % 3].checkbox(cat, value=cat in saved_cats, key=f"cat_{i}"):
+                selected_cats.append(cat)
+        # Titles from selected categories
+        cat_titles = []
+        for cat in selected_cats:
+            cat_titles.extend(_cats.get(cat, []))
+        cat_titles = list(dict.fromkeys(cat_titles))  # deduplicate, preserve order
+        if cat_titles:
+            st.markdown(
+                f'<div style="font-size:0.75rem;color:#3d5070;margin-top:8px">'
+                f'{len(cat_titles)} titles from selected categories</div>',
+                unsafe_allow_html=True,
+            )
+
+    with st.expander("Custom job titles", expanded=False):
+        st.caption("Extra titles to search for on top of the categories above. One per line.")
+        custom_raw = st.text_area("Custom titles", value="\n".join(cfg.get("custom_job_titles", [])),
+            height=140, label_visibility="collapsed", placeholder="e.g. Prompt Engineer\nAI Product Manager")
+        custom_titles = [t.strip() for t in custom_raw.splitlines() if t.strip()]
+        titles_raw = "\n".join(cat_titles + [t for t in custom_titles if t not in cat_titles])
+        all_titles = cat_titles + [t for t in custom_titles if t not in cat_titles]
+        st.caption(f"{len(all_titles)} total titles active")
 
     with st.expander("Company blacklist", expanded=False):
         st.caption("Jobs from these companies will be skipped automatically.")
@@ -1416,7 +1441,9 @@ elif "Settings" in page:
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
     if st.button("Save settings", type="primary"):
-        cfg["job_titles"]            = [t.strip() for t in titles_raw.splitlines() if t.strip()]
+        cfg["selected_categories"]   = selected_cats
+        cfg["custom_job_titles"]     = custom_titles
+        cfg["job_titles"]            = all_titles
         cfg["blacklisted_companies"] = [t.strip() for t in blacklist_raw.splitlines() if t.strip()]
         cfg["match_threshold"]  = threshold
         cfg["remote_only"]      = remote_only

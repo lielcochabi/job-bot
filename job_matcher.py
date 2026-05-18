@@ -127,8 +127,9 @@ _JUNIOR_TITLE_WORDS = {
 # ---------------------------------------------------------------------------
 
 _ALLOWED_ROLE_KEYWORDS = {
-    # Software engineering (general)
+    # Software engineering
     "software engineer", "software developer", "software dev",
+    "r&d engineer", "systems engineer", "embedded software",
     # Backend
     "backend", "back-end", "back end",
     "api developer", "api engineer",
@@ -138,52 +139,68 @@ _ALLOWED_ROLE_KEYWORDS = {
     "java developer", "java engineer",
     "golang developer", "go developer",
     "rust developer", "rust engineer",
-    # Fullstack (includes backend work)
+    "spring boot", "kotlin developer", "swift developer",
+    # Fullstack / web
     "fullstack", "full stack", "full-stack",
-    # DevOps / cloud / infrastructure (backend-adjacent)
+    "web developer", "web application",
+    # DevOps / cloud
     "devops", "platform engineer", "sre", "site reliability",
     "cloud engineer", "infrastructure engineer",
-    "solutions architect", "solutions engineer",
+    "solutions architect", "solutions engineer", "devsecops",
+    "kubernetes engineer", "aws engineer", "gcp engineer",
     # Game dev
-    "game developer", "game engineer", "game dev",
+    "game developer", "game engineer", "game dev", "game designer",
     "unity developer", "unity engineer",
     "unreal developer", "unreal engineer",
     "gameplay engineer", "gameplay developer",
-    "vr developer", "xr developer",
-    # AI / ML (Liel has LLM/DSPy experience)
+    "vr developer", "xr developer", "3d developer",
+    # AI / ML
     "ml engineer", "machine learning engineer",
-    "ai engineer", "llm engineer",
-    "data engineer",
-    # Intern / student variants of the above
+    "ai engineer", "llm engineer", "deep learning",
+    "nlp engineer", "computer vision", "generative ai",
+    "data scientist", "ai research",
+    # Data
+    "data engineer", "analytics engineer", "etl developer",
+    "data pipeline", "big data",
+    "data analyst", "business analyst", "bi developer",
+    "business intelligence", "product analyst", "growth analyst",
+    # Mobile
+    "ios developer", "android developer", "react native",
+    "flutter developer", "mobile developer", "mobile engineer",
+    # Security
+    "security engineer", "penetration tester", "appsec",
+    "cloud security", "information security",
+    # Product
+    "product manager", "product owner", "technical product manager",
+    "associate product manager",
+    # Design
+    "ux designer", "ui designer", "product designer",
+    "ux researcher", "interaction designer",
+    # Marketing & Growth
+    "marketing manager", "growth manager", "performance marketing",
+    "seo specialist", "digital marketing", "content marketing",
+    "email marketing", "paid acquisition",
+    # QA
+    "qa engineer", "test automation", "sdet", "quality assurance",
+    # Intern / junior
     "werkstudent", "working student", "student developer",
-    "intern", "internship", "trainee",
+    "intern", "internship", "trainee", "graduate",
+    "junior developer", "junior engineer", "junior software",
 }
 
-# Hard-block list — even if a whitelist keyword matches, reject these
+# Hard-block only truly irrelevant roles
 _NON_TECH_TITLES = {
-    "sales", "marketing", "recruiter", "recruiting", "accountant",
-    "accounting", "finance analyst", "financial analyst", "legal",
-    "hr ", "human resources", "content creator", "customer success",
-    "product designer", "graphic designer", "ux designer", "ui designer",
-    "community manager", "social media", "copywriter", "content writer",
-    "business development", "account manager", "office manager",
-    "supply chain", "logistics", "quality engineer", "electrical engineer",
-    "mechanical engineer", "civil engineer", "lsa engineer",
-    "system safety engineer", "supplier quality", "sales manager",
-    "customer service", "brand personality", "influencer",
-    "administrative", "reception",
-    # QA / testing
-    "qa engineer", "test engineer", "quality assurance", "manual tester",
-    # Writing / process
-    "technical writer", "scrum master", "agile coach",
-    # Analysis (different from engineering)
-    "data analyst",
-    # IT support
-    "it support", "help desk", "helpdesk", "technical support",
-    # Networking / sysadmin
+    "sales representative", "sales executive", "recruiter", "recruiting",
+    "accountant", "accounting", "financial analyst", "legal counsel",
+    "hr manager", "human resources manager",
+    "copywriter", "office manager", "supply chain", "logistics",
+    "electrical engineer", "mechanical engineer", "civil engineer",
+    "system safety engineer", "supplier quality",
+    "customer service representative", "brand personality", "influencer",
+    "administrative assistant", "receptionist",
+    "it support", "help desk", "helpdesk",
     "network engineer", "system administrator", "sysadmin",
-    # Hardware
-    "hardware engineer", "embedded engineer",
+    "hardware engineer",
 }
 
 # ---------------------------------------------------------------------------

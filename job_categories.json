@@ -1,0 +1,151 @@
+{
+  "Backend Development": [
+    "Backend Developer",
+    "Backend Engineer",
+    "Python Developer",
+    "Node.js Developer",
+    "Java Developer",
+    "Go Developer",
+    "Rust Developer",
+    "API Developer",
+    "FastAPI Developer",
+    "Django Developer",
+    "Spring Boot Developer"
+  ],
+  "Frontend Development": [
+    "Frontend Developer",
+    "Frontend Engineer",
+    "React Developer",
+    "Vue.js Developer",
+    "Angular Developer",
+    "JavaScript Developer",
+    "TypeScript Developer",
+    "UI Developer"
+  ],
+  "Full Stack": [
+    "Full Stack Developer",
+    "Full Stack Engineer",
+    "Web Developer",
+    "Web Application Developer"
+  ],
+  "DevOps & Cloud": [
+    "DevOps Engineer",
+    "Cloud Engineer",
+    "Site Reliability Engineer",
+    "Platform Engineer",
+    "Infrastructure Engineer",
+    "Kubernetes Engineer",
+    "AWS Engineer",
+    "GCP Engineer",
+    "Azure Engineer",
+    "CI/CD Engineer"
+  ],
+  "AI & Machine Learning": [
+    "ML Engineer",
+    "Machine Learning Engineer",
+    "AI Engineer",
+    "LLM Engineer",
+    "Deep Learning Engineer",
+    "NLP Engineer",
+    "Computer Vision Engineer",
+    "AI Research Engineer",
+    "Generative AI Engineer",
+    "Data Scientist"
+  ],
+  "Data Engineering": [
+    "Data Engineer",
+    "Analytics Engineer",
+    "ETL Developer",
+    "Data Pipeline Engineer",
+    "Big Data Engineer",
+    "Spark Engineer"
+  ],
+  "Data Analytics": [
+    "Data Analyst",
+    "Business Intelligence Analyst",
+    "BI Developer",
+    "Business Analyst",
+    "Product Analyst",
+    "Growth Analyst"
+  ],
+  "Game Development": [
+    "Game Developer",
+    "Game Engineer",
+    "Unity Developer",
+    "Unreal Engine Developer",
+    "Gameplay Engineer",
+    "VR Developer",
+    "XR Developer",
+    "3D Developer",
+    "Game Designer"
+  ],
+  "Mobile Development": [
+    "iOS Developer",
+    "Android Developer",
+    "React Native Developer",
+    "Flutter Developer",
+    "Mobile Developer",
+    "Mobile Engineer",
+    "Swift Developer",
+    "Kotlin Developer"
+  ],
+  "Cybersecurity": [
+    "Security Engineer",
+    "Application Security Engineer",
+    "Penetration Tester",
+    "Security Analyst",
+    "Cloud Security Engineer",
+    "DevSecOps Engineer"
+  ],
+  "Software Engineering (General)": [
+    "Software Engineer",
+    "Software Developer",
+    "Software Architect",
+    "Solutions Architect",
+    "R&D Engineer",
+    "Systems Engineer",
+    "Embedded Software Engineer"
+  ],
+  "Product Management": [
+    "Product Manager",
+    "Technical Product Manager",
+    "Product Owner",
+    "Senior Product Manager",
+    "Associate Product Manager"
+  ],
+  "Design & UX": [
+    "UX Designer",
+    "UI Designer",
+    "Product Designer",
+    "UX Researcher",
+    "Interaction Designer",
+    "Visual Designer"
+  ],
+  "Marketing & Growth": [
+    "Marketing Manager",
+    "Growth Manager",
+    "Performance Marketing Manager",
+    "SEO Specialist",
+    "Digital Marketing Manager",
+    "Content Marketing Manager",
+    "Email Marketing Specialist",
+    "Paid Acquisition Manager"
+  ],
+  "QA & Testing": [
+    "QA Engineer",
+    "Quality Assurance Engineer",
+    "Test Automation Engineer",
+    "SDET",
+    "Software Tester"
+  ],
+  "Internships & Junior": [
+    "Software Engineering Intern",
+    "Backend Intern",
+    "Frontend Intern",
+    "Data Science Intern",
+    "Junior Developer",
+    "Junior Software Engineer",
+    "Working Student Developer",
+    "Graduate Software Engineer"
+  ]
+}
