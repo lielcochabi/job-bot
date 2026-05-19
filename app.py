@@ -1671,7 +1671,7 @@ elif "Search" in page:
     _cats_sig = "|".join(sorted(_sel_cats or []))
     if st.session_state.get("_search_cats_sig") != _cats_sig:
         st.session_state["_search_cats_sig"]    = _cats_sig
-        st.session_state["search_title_default"] = list(all_titles)
+        st.session_state["search_title_default"] = []   # user picks titles manually
         st.session_state["search_title_ver"]     = st.session_state.get("search_title_ver", 0) + 1
 
     selected_titles = []
@@ -1685,7 +1685,7 @@ elif "Search" in page:
         if "search_title_ver" not in st.session_state:
             st.session_state["search_title_ver"] = 0
         if "search_title_default" not in st.session_state:
-            st.session_state["search_title_default"] = list(all_titles)
+            st.session_state["search_title_default"] = []   # start empty
         # Drop stale entries if config changed
         st.session_state["search_title_default"] = [
             t for t in st.session_state["search_title_default"] if t in all_titles
