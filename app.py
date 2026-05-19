@@ -1293,6 +1293,8 @@ def _card(job: dict, key_prefix: str = "card", *,
                     _form_status = ""
                     _form_msg    = ""
 
+                    _email_err = ""   # captured here, shown after rerun
+
                     if _contact and _from_addr and _gmail_pw:
                         try:
                             import smtplib
@@ -1316,66 +1318,66 @@ def _card(job: dict, key_prefix: str = "card", *,
                             with smtplib.SMTP("smtp.gmail.com", 587) as _srv:
                                 _srv.starttls()
                                 _srv.login(_from_addr, _gmail_pw)
-                                # sendmail recipients must include BCC manually
                                 _srv.sendmail(_from_addr, [_contact, _from_addr], _msg.as_string())
                             _sent_email = True
-                            st.toast(f"Email + resume sent to {_contact}", icon=":material/check:")
                         except Exception as _mail_err:
-                            st.warning(f":material/error: Email send failed: {_mail_err}")
+                            _email_err = f"SMTP error: {_mail_err}"
+                    elif not _from_addr or not _gmail_pw:
+                        _email_err = "NOTIFY_EMAIL or GMAIL_APP_PASSWORD not set in Streamlit secrets"
 
                     # ── Path B: ATS / HTML form ────────────────────────────
                     if not _sent_email and url:
                         with st.spinner("Trying to auto-fill application form…"):
                             _form_status, _form_msg = _try_form_submit(url, _answers, _rbytes, _rname)
-                        if _form_status == "sent":
-                            st.toast("Application form submitted!", icon=":material/check:")
-                        elif _form_status == "partial":
-                            st.toast("Form submitted — please verify on the job site.", icon=":material/info:")
 
-                    # ── Confirmation email to self (always, whatever path was taken) ──
+                    # ── Confirmation email to self (always, whatever path taken) ──
+                    _conf_sent = False
+                    _conf_err  = ""
                     _conf_from = os.environ.get("NOTIFY_EMAIL", "")
                     _conf_pw   = os.environ.get("GMAIL_APP_PASSWORD", "")
                     if _conf_from and _conf_pw:
                         try:
-                            import smtplib as _smtplib2
+                            import smtplib as _smtp2
                             from email.mime.multipart import MIMEMultipart as _MIME2
-                            from email.mime.text     import MIMEText     as _MIMEText2
+                            from email.mime.text     import MIMEText     as _MT2
                             from datetime            import datetime     as _dt
-                            _method_now = (
+                            _method_label = (
                                 "Email + resume" if _sent_email else
-                                f"ATS form ({_form_status})" if _form_status in ("sent", "partial") else
+                                f"ATS form ({_form_status})" if _form_status in ("sent","partial") else
                                 "Cheat sheet only (manual apply needed)"
                             )
-                            _conf = _MIME2()
-                            _conf["From"]    = _conf_from
-                            _conf["To"]      = _conf_from
-                            _conf["Subject"] = f"[Job Bot] Applied: {title} at {company}"
-                            _body = (
-                                f"Job Bot application confirmation\n"
-                                f"{'='*50}\n\n"
-                                f"Job:     {title}\n"
-                                f"Company: {company}\n"
-                                f"URL:     {url}\n"
-                                f"Method:  {_method_now}\n"
+                            _c = _MIME2()
+                            _c["From"]    = _conf_from
+                            _c["To"]      = _conf_from
+                            _c["Subject"] = f"[Job Bot] Applied: {title} at {company}"
+                            _c.attach(_MT2(
+                                f"Job Bot confirmation\n{'='*48}\n\n"
+                                f"Job:     {title}\nCompany: {company}\nURL:     {url}\n"
+                                f"Method:  {_method_label}\n"
                                 f"Sent to: {_contact or 'no contact email found'}\n"
                                 f"Time:    {_dt.utcnow().strftime('%Y-%m-%d %H:%M UTC')}\n\n"
-                                f"--- Cover letter sent ---\n\n"
-                                f"{_answers.get('cover_letter', '(none)')}\n"
-                            )
-                            _conf.attach(_MIMEText2(_body, "plain"))
-                            with _smtplib2.SMTP("smtp.gmail.com", 587) as _srv2:
-                                _srv2.starttls()
-                                _srv2.login(_conf_from, _conf_pw)
-                                _srv2.sendmail(_conf_from, _conf_from, _conf.as_string())
-                        except Exception:
-                            pass   # confirmation email failure is non-critical
+                                f"--- Cover letter ---\n\n{_answers.get('cover_letter','(none)')}\n",
+                                "plain",
+                            ))
+                            with _smtp2.SMTP("smtp.gmail.com", 587) as _s2:
+                                _s2.starttls()
+                                _s2.login(_conf_from, _conf_pw)
+                                _s2.sendmail(_conf_from, _conf_from, _c.as_string())
+                            _conf_sent = True
+                        except Exception as _ce:
+                            _conf_err = str(_ce)
+                    else:
+                        _conf_err = "NOTIFY_EMAIL or GMAIL_APP_PASSWORD not set in Streamlit secrets"
 
-                    # Persist state for display below
-                    st.session_state[f"_ai_ans_{jid}"]     = _answers
-                    st.session_state[f"_ai_email_{jid}"]   = _contact
-                    st.session_state[f"_ai_sent_{jid}"]    = _sent_email
-                    st.session_state[f"_ai_fstatus_{jid}"] = _form_status
-                    st.session_state[f"_ai_fmsg_{jid}"]    = _form_msg
+                    # Persist state for display below (survives rerun)
+                    st.session_state[f"_ai_ans_{jid}"]       = _answers
+                    st.session_state[f"_ai_email_{jid}"]     = _contact
+                    st.session_state[f"_ai_sent_{jid}"]      = _sent_email
+                    st.session_state[f"_ai_fstatus_{jid}"]   = _form_status
+                    st.session_state[f"_ai_fmsg_{jid}"]      = _form_msg
+                    st.session_state[f"_ai_email_err_{jid}"] = _email_err
+                    st.session_state[f"_ai_conf_sent_{jid}"] = _conf_sent
+                    st.session_state[f"_ai_conf_err_{jid}"]  = _conf_err
 
                     # Mark applied
                     _method = "AI Email" if _sent_email else ("AI Form" if _form_status in ("sent", "partial") else "AI Cover Letter")
@@ -1389,23 +1391,36 @@ def _card(job: dict, key_prefix: str = "card", *,
 
             # ── Show results panel ─────────────────────────────────────────────
             if f"_ai_ans_{jid}" in st.session_state:
-                _ans      = st.session_state[f"_ai_ans_{jid}"]
-                _was_sent = st.session_state.get(f"_ai_sent_{jid}", False)
-                _to_addr  = st.session_state.get(f"_ai_email_{jid}", "")
-                _fst      = st.session_state.get(f"_ai_fstatus_{jid}", "")
-                _fmsg     = st.session_state.get(f"_ai_fmsg_{jid}", "")
+                _ans        = st.session_state[f"_ai_ans_{jid}"]
+                _was_sent   = st.session_state.get(f"_ai_sent_{jid}", False)
+                _to_addr    = st.session_state.get(f"_ai_email_{jid}", "")
+                _fst        = st.session_state.get(f"_ai_fstatus_{jid}", "")
+                _fmsg       = st.session_state.get(f"_ai_fmsg_{jid}", "")
+                _email_err  = st.session_state.get(f"_ai_email_err_{jid}", "")
+                _conf_sent  = st.session_state.get(f"_ai_conf_sent_{jid}", False)
+                _conf_err   = st.session_state.get(f"_ai_conf_err_{jid}", "")
 
+                # Application outcome
                 if _was_sent:
-                    st.success(f":material/check: Email + resume attached sent to **{_to_addr}**")
+                    st.success(f":material/check: Application email + resume sent to **{_to_addr}** — check your inbox for the BCC copy")
                 elif _fst == "sent":
                     st.success(f":material/check: {_fmsg}")
                 elif _fst == "partial":
                     st.info(f":material/info: {_fmsg}")
+                elif _email_err:
+                    st.error(f":material/error: Email failed — {_email_err}")
                 else:
-                    if _fmsg:
-                        st.info(f":material/info: {_fmsg}")
-                    else:
-                        st.info(":material/info: No direct email or auto-submittable form found — use the cheat sheet.")
+                    st.info(":material/info: No contact email found in job description — use the cheat sheet below to apply manually.")
+
+                if _fmsg and _fst not in ("sent", "partial"):
+                    st.caption(f"Form attempt: {_fmsg}")
+
+                # Confirmation email status — this is the clearest proof
+                if _conf_sent:
+                    _inbox = os.environ.get("NOTIFY_EMAIL", "your inbox")
+                    st.success(f":material/mark_email_read: Confirmation email sent to **{_inbox}** — if it arrived, the application went through")
+                elif _conf_err:
+                    st.warning(f":material/warning: Confirmation email failed: {_conf_err}")
 
                 _show_apply_cheatsheet(_ans, job)
 
@@ -1767,13 +1782,9 @@ elif "Matched" in page:
     if not matched:
         st.info("No matched jobs yet. Run a search from the Dashboard first.")
     else:
-        col1, col2 = st.columns(2)
-        with col1:
-            min_score = st.slider("Minimum score", 70, 100, 70)
-        with col2:
-            sort_by = st.selectbox("Sort by", ["Score (high to low)", "Company A–Z"])
+        sort_by = st.selectbox("Sort by", ["Score (high to low)", "Company A–Z"])
 
-        filtered = [j for j in matched if (j.get("match_score") or 0) >= min_score]
+        filtered = list(matched)
         if "Company" in sort_by:
             filtered.sort(key=lambda j: (j.get("company") or "").lower())
         else:
