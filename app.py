@@ -1423,8 +1423,9 @@ def _card(job: dict, key_prefix: str = "card", *,
                     st.error(f":material/error: Could not send email — {_email_err}")
                     st.info(":material/info: Use the cheat sheet below to apply manually, then click **Mark applied** when done.")
                 else:
-                    st.warning(":material/info: No contact email found and form could not be auto-submitted. "
-                               "Open the job link, paste the answers below into the form, then click **Mark applied**.")
+                    st.info(":material/info: This job has no contact email in its description and the form "
+                            "couldn't be auto-submitted. Open the job link, fill in the form using the answers "
+                            "below, then click **Mark applied**.")
 
                 if _fmsg and _fst not in ("sent", "partial"):
                     st.caption(f"Form attempt: {_fmsg}")
