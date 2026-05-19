@@ -834,6 +834,293 @@ def _ai_cover_letter(job: dict, resume_text: str) -> str:
         return ""
 
 
+# ---------------------------------------------------------------------------
+# ATS / form-fill helpers
+# ---------------------------------------------------------------------------
+
+# (answer_key, list-of-fragments that match a field's name/id/placeholder)
+_FIELD_PATTERNS = [
+    ("first_name",         ["first_name", "firstname", "fname", "first name"]),
+    ("last_name",          ["last_name", "lastname", "lname", "last name", "surname"]),
+    ("full_name",          ["full_name", "fullname", "your name", "applicant_name"]),
+    ("email",              ["email", "e-mail", "email_address"]),
+    ("phone",              ["phone", "tel", "mobile", "cell"]),
+    ("linkedin_url",       ["linkedin", "linkedin_url", "linkedin_profile"]),
+    ("github_url",         ["github", "github_url"]),
+    ("portfolio_url",      ["portfolio", "website", "personal_site"]),
+    ("location",           ["location", "city", "address", "current_location"]),
+    ("cover_letter",       ["cover_letter", "coverletter", "message", "letter", "motivation", "introduction"]),
+    ("years_experience",   ["years_experience", "years experience", "experience_years"]),
+    ("current_title",      ["current_title", "current_position", "job_title"]),
+    ("current_company",    ["current_company", "current_employer", "org"]),
+    ("salary_expectation", ["salary", "compensation", "expected_salary"]),
+    ("start_date",         ["start_date", "available", "availability"]),
+    ("summary",            ["summary", "bio", "about_you"]),
+]
+
+
+def _detect_ats(url: str) -> str:
+    """Identify the ATS platform from the job URL."""
+    u = url.lower()
+    if "boards.greenhouse.io" in u or "grnh.se" in u or "greenhouse.io" in u:
+        return "greenhouse"
+    if "jobs.lever.co" in u or "lever.co" in u:
+        return "lever"
+    if "myworkdayjobs.com" in u or "myworkday.com" in u:
+        return "workday"
+    if "smartrecruiters.com" in u:
+        return "smartrecruiters"
+    if "bamboohr.com" in u:
+        return "bamboohr"
+    if "ashbyhq.com" in u or "ashby.io" in u:
+        return "ashby"
+    return "unknown"
+
+
+def _ai_form_answers(job: dict, resume_text: str) -> dict:
+    """Use AI to generate complete pre-filled answers for every application form field."""
+    api_key = os.environ.get("OPENROUTER_API_KEY", "")
+    if not api_key:
+        return {}
+    cfg     = load_config()
+    profile = cfg.get("profile", {})
+    name    = profile.get("name", "")
+    email   = profile.get("email", os.environ.get("NOTIFY_EMAIL", ""))
+    phone   = profile.get("phone", "")
+    linkedin = profile.get("linkedin", "")
+    location = profile.get("location", "")
+    parts   = name.strip().split(None, 1) if name else ["", ""]
+    fn, ln  = parts[0], (parts[1] if len(parts) > 1 else "")
+    title_  = job.get("title", "")
+    company_ = job.get("company", "")
+    desc_   = (job.get("description") or "")[:900]
+
+    prompt = (
+        "You are filling out a job application. Generate professional, specific answers.\n\n"
+        f"Resume:\n{resume_text[:2500]}\n\n"
+        f"Job: {title_!r} at {company_!r}\n"
+        f"Description: {desc_}\n\n"
+        "Known profile:\n"
+        f"  Name: {name or '(extract from resume)'}\n"
+        f"  Email: {email}\n"
+        f"  Phone: {phone or '(extract from resume)'}\n"
+        f"  LinkedIn: {linkedin or '(extract or leave empty)'}\n"
+        f"  Location: {location or '(extract from resume)'}\n\n"
+        "Return ONLY a JSON object — no markdown, no explanation:\n"
+        "{\n"
+        f'  "first_name": "{fn or "(extract)"}",\n'
+        f'  "last_name": "{ln or "(extract)"}",\n'
+        f'  "full_name": "{name or "(extract)"}",\n'
+        f'  "email": "{email}",\n'
+        '  "phone": "(extract from resume or empty)",\n'
+        '  "linkedin_url": "(extract from resume or empty)",\n'
+        '  "github_url": "(extract from resume or empty)",\n'
+        '  "portfolio_url": "(extract from resume or empty)",\n'
+        '  "location": "(extract from resume)",\n'
+        '  "city": "(extract city from resume)",\n'
+        '  "country": "Israel",\n'
+        '  "current_company": "(most recent company from resume)",\n'
+        '  "current_title": "(most recent title from resume)",\n'
+        '  "years_experience": "(total years from resume)",\n'
+        f'  "cover_letter": "(write a focused 3-paragraph cover letter for {title_} at {company_})",\n'
+        f'  "why_this_company": "(2 sentences specific to {company_})",\n'
+        '  "salary_expectation": "According to industry standards",\n'
+        '  "start_date": "Immediately",\n'
+        '  "work_authorization": "Yes",\n'
+        '  "require_sponsorship": "No",\n'
+        '  "willing_to_relocate": "Yes",\n'
+        '  "how_did_you_hear": "Job board",\n'
+        '  "summary": "(2-sentence professional summary from resume)"\n'
+        "}"
+    )
+    try:
+        import httpx as _hx
+        r = _hx.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={"model": "meta-llama/llama-3.1-8b-instruct:free",
+                  "messages": [{"role": "user", "content": prompt}],
+                  "temperature": 0.3, "max_tokens": 950},
+            timeout=40,
+        )
+        r.raise_for_status()
+        text = r.json()["choices"][0]["message"]["content"].strip()
+        m = re.search(r'\{.*\}', text, re.DOTALL)
+        if m:
+            return json.loads(m.group())
+    except Exception:
+        pass
+    return {}
+
+
+def _try_form_submit(url: str, answers: dict, resume_bytes: bytes, resume_name: str) -> tuple:
+    """
+    Try to auto-submit an online application form.
+    Returns (status, message) where status is 'sent' | 'partial' | 'cheatsheet'.
+    """
+    import httpx as _hx
+    ats = _detect_ats(url)
+
+    # JS-heavy ATSes — can't submit via HTTP
+    if ats in ("workday", "bamboohr", "ashby", "smartrecruiters"):
+        return "cheatsheet", f"{ats.title()} uses a JavaScript form — fill manually with the cheat sheet."
+
+    ua = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "text/html,application/xhtml+xml,*/*;q=0.9",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+
+    try:
+        from bs4 import BeautifulSoup as _BS  # noqa: N812
+
+        fetch_url = url
+        if ats == "lever" and not url.rstrip("/").endswith("/apply"):
+            fetch_url = url.rstrip("/") + "/apply"
+
+        client = _hx.Client(headers=ua, follow_redirects=True, timeout=15)
+        resp0 = client.get(fetch_url)
+        if resp0.status_code != 200:
+            return "cheatsheet", f"Could not load form (HTTP {resp0.status_code})"
+
+        soup = _BS(resp0.text, "html.parser")
+
+        # Pick the application form
+        if ats == "greenhouse":
+            form = soup.find("form", {"id": "application_form"}) or soup.find("form")
+        else:
+            all_forms = soup.find_all("form")
+            if not all_forms:
+                return "cheatsheet", "No HTML form found on page (JS-rendered site)"
+            form = max(all_forms, key=lambda f: len(f.find_all(["input", "textarea", "select"])))
+
+        if not form:
+            return "cheatsheet", "No application form detected"
+
+        action = form.get("action") or fetch_url
+        method = (form.get("method") or "post").lower()
+        if not action.startswith("http"):
+            from urllib.parse import urljoin
+            action = urljoin(fetch_url, action)
+
+        # Seed with hidden inputs (CSRF tokens, etc.)
+        data: dict = {}
+        for inp in form.find_all("input", {"type": "hidden"}):
+            n = inp.get("name")
+            if n:
+                data[n] = inp.get("value", "")
+
+        # ATS-specific direct mappings
+        if ats == "greenhouse":
+            for k, v in {
+                "job_application[first_name]":          answers.get("first_name", ""),
+                "job_application[last_name]":           answers.get("last_name", ""),
+                "job_application[email]":               answers.get("email", ""),
+                "job_application[phone]":               answers.get("phone", ""),
+                "job_application[cover_letter_text]":   answers.get("cover_letter", ""),
+                "job_application[linkedin_profile_url]": answers.get("linkedin_url", ""),
+                "job_application[website]":             answers.get("portfolio_url", ""),
+            }.items():
+                if v:
+                    data[k] = v
+        elif ats == "lever":
+            for k, v in {
+                "name":     answers.get("full_name", ""),
+                "email":    answers.get("email", ""),
+                "phone":    answers.get("phone", ""),
+                "org":      answers.get("current_company", ""),
+                "linkedin": answers.get("linkedin_url", ""),
+                "github":   answers.get("github_url", ""),
+                "comments": answers.get("cover_letter", ""),
+            }.items():
+                if v:
+                    data[k] = v
+        else:
+            # Generic: pattern-match field names / ids / placeholders
+            for answer_key, patterns in _FIELD_PATTERNS:
+                value = answers.get(answer_key, "")
+                if not value:
+                    continue
+                for el in form.find_all(["input", "textarea"]):
+                    if el.get("type") in ("hidden", "file", "submit", "button", "checkbox", "radio"):
+                        continue
+                    sig = " ".join(filter(None, [
+                        el.get("name", "").lower(),
+                        el.get("id", "").lower(),
+                        el.get("placeholder", "").lower(),
+                        el.get("aria-label", "").lower(),
+                    ]))
+                    if any(p in sig for p in patterns):
+                        n = el.get("name")
+                        if n:
+                            data[n] = value
+                        break
+
+        # Resume file upload
+        files: dict = {}
+        file_inp = form.find("input", {"type": "file"})
+        if file_inp and resume_bytes:
+            field_name = file_inp.get("name") or "resume"
+            files[field_name] = (resume_name, resume_bytes, "application/octet-stream")
+
+        # Submit
+        if method == "post":
+            resp1 = client.post(action, data=data, files=files if files else None, timeout=25)
+        else:
+            resp1 = client.get(action, params=data, timeout=25)
+
+        if resp1.status_code in (200, 201, 302):
+            rtext = resp1.text.lower()
+            if any(kw in rtext for kw in ("thank you", "submitted", "received your", "application sent", "success")):
+                return "sent", "Application submitted successfully"
+            return "partial", "Form submitted — verify on the job site"
+        return "cheatsheet", f"Form returned HTTP {resp1.status_code}"
+
+    except ImportError:
+        return "cheatsheet", "beautifulsoup4 not available — use the cheat sheet."
+    except Exception as e:
+        return "cheatsheet", f"Auto-fill error: {e}"
+
+
+def _show_apply_cheatsheet(answers: dict, job: dict) -> None:
+    """Render pre-filled application answers as a copy-paste cheat sheet."""
+    jid = job.get("id", "x")
+    st.markdown("##### :material/content_paste: Quick Apply Cheat Sheet")
+    st.caption("Pre-filled from your resume — click any box to copy.")
+
+    _LABELS = [
+        ("first_name",         "First name"),
+        ("last_name",          "Last name"),
+        ("email",              "Email"),
+        ("phone",              "Phone"),
+        ("linkedin_url",       "LinkedIn URL"),
+        ("github_url",         "GitHub URL"),
+        ("portfolio_url",      "Portfolio URL"),
+        ("location",           "Location / City"),
+        ("current_company",    "Current company"),
+        ("current_title",      "Current title"),
+        ("years_experience",   "Years of experience"),
+        ("salary_expectation", "Salary expectation"),
+        ("start_date",         "Start date"),
+        ("work_authorization", "Work authorization"),
+        ("require_sponsorship","Sponsorship needed"),
+        ("how_did_you_hear",   "How did you hear about us"),
+    ]
+
+    # Two-column grid for short fields
+    _pairs = [(k, l, answers.get(k, "")) for k, l in _LABELS if answers.get(k, "")]
+    _cols = st.columns(2)
+    for i, (k, label, val) in enumerate(_pairs):
+        _cols[i % 2].text_input(label, value=val, key=f"cs_{k}_{jid}")
+
+    for key, label in (("why_this_company", "Why this company"), ("summary", "Professional summary")):
+        if answers.get(key):
+            st.text_area(label, value=answers[key], height=80, key=f"cs_{key}_{jid}")
+
+    if answers.get("cover_letter"):
+        st.text_area("Cover letter", value=answers["cover_letter"], height=200, key=f"cs_cl_{jid}")
+
+
 def _card(job: dict, key_prefix: str = "card", *,
           show_score: bool = False, show_status: bool = False,
           skip_btn: bool = False, apply_btns: bool = False) -> None:
@@ -921,79 +1208,114 @@ def _card(job: dict, key_prefix: str = "card", *,
                 key=f"ai_apply_{key_prefix}_{jid}",
                 use_container_width=True,
                 disabled=not _has_ai_key,
-                help="Generates a cover letter and sends an email application if a contact address is found." if _has_ai_key else "Add OPENROUTER_API_KEY to Streamlit secrets to enable.",
+                help=(
+                    "Generates all form answers from your resume, then:\n"
+                    "• Sends email + resume if a contact address is found\n"
+                    "• Auto-fills Greenhouse / Lever forms\n"
+                    "• Shows a Quick Apply Cheat Sheet for everything else"
+                ) if _has_ai_key else "Add OPENROUTER_API_KEY to Streamlit secrets to enable.",
             ):
-                _resume = database.get_resume_content()
-                if not _resume:
+                _resume_text = database.get_resume_content()
+                if not _resume_text:
                     st.warning(":material/info: Upload your resume in Settings first.")
                 else:
-                    with st.spinner("Generating cover letter…"):
-                        _cl = _ai_cover_letter(job, _resume)
+                    with st.spinner("Generating application answers…"):
+                        _answers = _ai_form_answers(job, _resume_text)
 
-                    if not _cl:
-                        st.error("Could not generate cover letter — check OPENROUTER_API_KEY.")
+                    if not _answers:
+                        st.error("Could not generate answers — check OPENROUTER_API_KEY.")
                     else:
-                        # Try to find a contact email in the job description
-                        _desc_full = job.get("description", "")
-                        _emails = re.findall(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", _desc_full)
-                        _blocked = {"noreply", "no-reply", "donotreply", "privacy", "legal", "info@linkedin"}
-                        _to = next((e for e in _emails if not any(b in e.lower() for b in _blocked)), None)
+                        _rname, _rbytes = database.get_resume_file()
+                        if not _rname:
+                            _rname = "resume.pdf"
 
-                        _from  = os.environ.get("NOTIFY_EMAIL", "")
-                        _pw    = os.environ.get("GMAIL_APP_PASSWORD", "")
-                        _cfg   = load_config()
-                        _prof  = _cfg.get("profile", {})
-                        _name  = _prof.get("name", "")
-                        _sent  = False
+                        # ── Path A: email contact found in job description ──────
+                        _desc_full   = job.get("description", "")
+                        _emails_desc = re.findall(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", _desc_full)
+                        _skip_emails = {"noreply", "no-reply", "donotreply", "privacy", "legal", "info@linkedin"}
+                        _contact     = next((e for e in _emails_desc if not any(b in e.lower() for b in _skip_emails)), None)
 
-                        if _to and _from and _pw:
-                            # Auto-send email application
+                        _from_addr = os.environ.get("NOTIFY_EMAIL", "")
+                        _gmail_pw  = os.environ.get("GMAIL_APP_PASSWORD", "")
+                        _sent_email = False
+                        _form_status = ""
+                        _form_msg    = ""
+
+                        if _contact and _from_addr and _gmail_pw:
                             try:
                                 import smtplib
                                 from email.mime.multipart import MIMEMultipart as _MIME
-                                from email.mime.text import MIMEText as _MIMEText
-                                _msg = _MIME()
-                                _msg["From"]    = _from
-                                _msg["To"]      = _to
-                                _msg["Subject"] = f"Application for {title}" + (f" — {_name}" if _name else "")
-                                _msg.attach(_MIMEText(_cl, "plain"))
+                                from email.mime.text     import MIMEText     as _MIMEText
+                                from email.mime.base     import MIMEBase     as _MIMEBase
+                                from email              import encoders      as _enc
+                                _pname = load_config().get("profile", {}).get("name", "")
+                                _msg   = _MIME()
+                                _msg["From"]    = _from_addr
+                                _msg["To"]      = _contact
+                                _msg["Subject"] = f"Application for {title}" + (f" — {_pname}" if _pname else "")
+                                _msg.attach(_MIMEText(_answers.get("cover_letter", ""), "plain"))
+                                if _rbytes:
+                                    _att = _MIMEBase("application", "octet-stream")
+                                    _att.set_payload(_rbytes)
+                                    _enc.encode_base64(_att)
+                                    _att.add_header("Content-Disposition", f'attachment; filename="{_rname}"')
+                                    _msg.attach(_att)
                                 with smtplib.SMTP("smtp.gmail.com", 587) as _srv:
                                     _srv.starttls()
-                                    _srv.login(_from, _pw)
-                                    _srv.sendmail(_from, _to, _msg.as_string())
-                                _sent = True
-                                st.toast(f"Email sent to {_to}", icon=":material/check:")
-                            except Exception as _e:
-                                st.warning(f"Could not send email: {_e}")
+                                    _srv.login(_from_addr, _gmail_pw)
+                                    _srv.sendmail(_from_addr, _contact, _msg.as_string())
+                                _sent_email = True
+                                st.toast(f"Email + resume sent to {_contact}", icon=":material/check:")
+                            except Exception as _mail_err:
+                                st.warning(f"Email send failed: {_mail_err}")
 
-                        # Store letter and result
-                        st.session_state[f"_cl_{jid}"] = _cl
-                        st.session_state[f"_cl_sent_{jid}"] = _sent
-                        st.session_state[f"_cl_to_{jid}"]   = _to
+                        # ── Path B: ATS / HTML form ────────────────────────────
+                        if not _sent_email and url:
+                            with st.spinner("Trying to auto-fill application form…"):
+                                _form_status, _form_msg = _try_form_submit(url, _answers, _rbytes, _rname)
+                            if _form_status == "sent":
+                                st.toast("Application form submitted!", icon=":material/check:")
+                            elif _form_status == "partial":
+                                st.toast("Form submitted — please verify on the job site.", icon=":material/info:")
 
-                        # Mark applied and log to tracker
-                        database.set_applied(jid, "AI Email" if _sent else "AI Cover Letter")
+                        # Persist state for display below
+                        st.session_state[f"_ai_ans_{jid}"]    = _answers
+                        st.session_state[f"_ai_email_{jid}"]  = _contact
+                        st.session_state[f"_ai_sent_{jid}"]   = _sent_email
+                        st.session_state[f"_ai_fstatus_{jid}"] = _form_status
+                        st.session_state[f"_ai_fmsg_{jid}"]   = _form_msg
+
+                        # Mark applied
+                        _method = "AI Email" if _sent_email else ("AI Form" if _form_status in ("sent", "partial") else "AI Cover Letter")
+                        database.set_applied(jid, _method)
                         try:
                             import tracker as _tr
-                            _tr.add_job({**job, "match_score": score}, "AI Email" if _sent else "AI Cover Letter", username=_username)
+                            _tr.add_job({**job, "match_score": score}, _method, username=_username)
                         except Exception:
                             pass
                         st.rerun()
 
-            # Show generated letter if available
-            if f"_cl_{jid}" in st.session_state:
-                _was_sent = st.session_state.get(f"_cl_sent_{jid}", False)
-                _sent_to  = st.session_state.get(f"_cl_to_{jid}", "")
+            # ── Show results panel ─────────────────────────────────────────────
+            if f"_ai_ans_{jid}" in st.session_state:
+                _ans      = st.session_state[f"_ai_ans_{jid}"]
+                _was_sent = st.session_state.get(f"_ai_sent_{jid}", False)
+                _to_addr  = st.session_state.get(f"_ai_email_{jid}", "")
+                _fst      = st.session_state.get(f"_ai_fstatus_{jid}", "")
+                _fmsg     = st.session_state.get(f"_ai_fmsg_{jid}", "")
+
                 if _was_sent:
-                    st.success(f":material/check: Email application sent to **{_sent_to}**")
+                    st.success(f":material/check: Email + resume attached sent to **{_to_addr}**")
+                elif _fst == "sent":
+                    st.success(f":material/check: {_fmsg}")
+                elif _fst == "partial":
+                    st.info(f":material/info: {_fmsg}")
                 else:
-                    st.info(":material/info: No contact email found — copy the letter below and apply manually.")
-                st.text_area(
-                    "Cover letter (editable)",
-                    value=st.session_state[f"_cl_{jid}"],
-                    height=220,
-                    key=f"_cl_area_{jid}",
-                )
+                    if _fmsg:
+                        st.info(f":material/info: {_fmsg}")
+                    else:
+                        st.info(":material/info: No direct email or auto-submittable form found — use the cheat sheet.")
+
+                _show_apply_cheatsheet(_ans, job)
 
 
 # ---------------------------------------------------------------------------
@@ -1509,10 +1831,12 @@ elif "Settings" in page:
             import resume_parser as rp
             suffix = Path(uploaded.name).suffix.lower()
             resume_path = BOT_DIR / f"uploaded_resume{suffix}"
-            resume_path.write_bytes(uploaded.getvalue())
+            _raw_bytes = uploaded.getvalue()
+            resume_path.write_bytes(_raw_bytes)
             text = rp.extract_text(resume_path)
             if text and not text.startswith("["):
                 database.save_resume(str(resume_path), text)
+                database.save_resume_file(uploaded.name, _raw_bytes)   # store bytes for form uploads
                 profile_data = rp.extract_resume_profile(text)
                 st.session_state["auto_profile"] = profile_data
                 st.toast(f"Parsed {uploaded.name} — {len(text):,} characters", icon=":material/check:")

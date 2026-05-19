@@ -232,6 +232,36 @@ def save_resume(path: str, content: str) -> None:
     )
 
 
+def save_resume_file(filename: str, data: bytes) -> None:
+    """Store the original resume file bytes so they can be attached to form applications."""
+    from bson import Binary
+    db = _get_db()
+    db.resumes.update_one(
+        {"username": _uname()},
+        {"$set": {
+            "filename":     filename,
+            "file_bytes":   Binary(data),
+            "file_updated": datetime.utcnow().isoformat(),
+        }},
+        upsert=True,
+    )
+
+
+def get_resume_file() -> tuple:
+    """Return (filename, bytes) for the stored resume file, or ('', b'')."""
+    db = _get_db()
+    doc = db.resumes.find_one(
+        {"username": _uname(), "file_bytes": {"$exists": True}},
+        sort=[("file_updated", DESCENDING)],
+    )
+    if doc and doc.get("file_bytes"):
+        try:
+            return doc.get("filename", "resume.pdf"), bytes(doc["file_bytes"])
+        except Exception:
+            pass
+    return "", b""
+
+
 def get_resume_content() -> str:
     db = _get_db()
     rows = list(db.resumes.find(
