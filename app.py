@@ -1334,7 +1334,8 @@ def _card(job: dict, key_prefix: str = "card", *,
                                 _srv.sendmail(_smtp_from, _recipients, _msg.as_string())
                             _sent_email = True
                         except Exception as _mail_err:
-                            _email_err = f"SMTP error: {_mail_err}"
+                            _email_err = (f"SMTP error sending from {_smtp_from} "
+                                          f"(password starts with '{_smtp_pw[:4]}…'): {_mail_err}")
                     elif not _smtp_from or not _smtp_pw:
                         _email_err = "NOTIFY_EMAIL or GMAIL_APP_PASSWORD not set in Streamlit secrets"
 
@@ -1380,7 +1381,8 @@ def _card(job: dict, key_prefix: str = "card", *,
                                 _s2.sendmail(_smtp_from, _user_email, _c.as_string())
                             _conf_sent = True
                         except Exception as _ce:
-                            _conf_err = str(_ce)
+                            _conf_err = (f"SMTP from {_smtp_from} "
+                                         f"(password '{_smtp_pw[:4]}…'): {_ce}")
 
                     # Persist state for display below (survives rerun)
                     st.session_state[f"_ai_ans_{jid}"]       = _answers
@@ -1470,7 +1472,7 @@ _startup_cfg = database.load_config()
 _cleanup_once(_username, int(_startup_cfg.get("job_expiry_days", 30)))
 stats = _get_stats(_username)
 
-_PAGES = ["Dashboard", "Search", "Matched Jobs", "Apply", "Tracker", "Settings", "Help"]
+_PAGES = ["Dashboard", "Search", "Apply", "Tracker", "Settings", "Help"]
 
 def _go(page_fragment: str):
     for p in _PAGES:
@@ -1590,7 +1592,7 @@ if "Dashboard" in page:
                    type="primary" if _active == 1 else "secondary"): _go("Search")
     if col2.button("Review matches", use_container_width=True,
                    type="primary" if _active == 2 else "secondary",
-                   disabled=not _has_matches): _go("Matched")
+                   disabled=not _has_matches): _go("Apply")
     if col3.button("Apply →",        use_container_width=True,
                    type="primary" if _active == 3 else "secondary",
                    disabled=not _has_matches): _go("Apply")
@@ -1794,42 +1796,6 @@ elif "Search" in page:
                         _card(job, key_prefix=f"srch_done_{job.get('id','')}", show_status=True)
         else:
             st.caption("No jobs found in the last 24 hours.")
-
-
-# ---------------------------------------------------------------------------
-# Matched Jobs
-# ---------------------------------------------------------------------------
-
-elif "Matched" in page:
-    _guest_block()
-    st.title(":material/stars: Matched Jobs")
-    st.caption("Jobs scoring ≥70% against your profile.")
-
-    matched = database.get_jobs_by_status("matched")
-
-    if not matched:
-        st.info("No matched jobs yet. Run a search from the Dashboard first.")
-    else:
-        sort_by = st.selectbox("Sort by", ["Score (high to low)", "Company A–Z"])
-
-        filtered = list(matched)
-        if "Company" in sort_by:
-            filtered.sort(key=lambda j: (j.get("company") or "").lower())
-        else:
-            filtered.sort(key=lambda j: j.get("match_score") or 0, reverse=True)
-
-        from collections import defaultdict
-        grouped: dict[str, list] = defaultdict(list)
-        for job in filtered:
-            grouped[job.get("source") or "Unknown"].append(job)
-
-        st.caption(f":material/work: {len(filtered)} jobs across {len(grouped)} sources")
-
-        for source, jobs in sorted(grouped.items(), key=lambda x: -len(x[1])):
-            n = len(jobs)
-            with st.expander(f"{source}  ·  {n} {'job' if n == 1 else 'jobs'}", expanded=True):
-                for job in jobs:
-                    _card(job, key_prefix=f"{source}_{job.get('id','')}", show_score=True, skip_btn=True)
 
 
 # ---------------------------------------------------------------------------
