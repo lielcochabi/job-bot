@@ -900,10 +900,15 @@ def search_all_sources(
         "alljobs":       ("AllJobs",        lambda: list(search_alljobs(queries)),         True),
     }
 
-    # Israel mode: Israeli boards + global remote boards (remote jobs are valid for IL workers)
-    if israel_only and sources is None:
-        enabled = {"drushim", "indeed_il", "alljobs",
-                   "remoteok", "remotive", "jobicy", "himalayas"}
+    # Israel mode: always restrict to Israeli boards + global remote boards only.
+    # Arbeitnow/The Muse/HN/Workingnomads are international-only and waste quota.
+    _ISRAEL_SOURCES = {"drushim", "indeed_il", "alljobs",
+                       "remoteok", "remotive", "jobicy", "himalayas"}
+    if israel_only:
+        user_requested = set(s.lower() for s in (sources or all_sources))
+        enabled = user_requested & _ISRAEL_SOURCES
+        if not enabled:          # fallback: user picked only non-IL sources
+            enabled = _ISRAEL_SOURCES
     else:
         enabled = set(s.lower() for s in (sources or all_sources))
 

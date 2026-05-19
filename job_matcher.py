@@ -525,6 +525,17 @@ def match_job(
             "matched": [], "missing": [],
         })
 
+    # 1b. Seniority preference filter (hard block if preference set)
+    _cfg_sen = database.load_config().get("seniority", "Any")
+    if _cfg_sen and _cfg_sen != "Any":
+        _tl = title.lower()
+        _is_senior = any(k in _tl for k in ("senior", " sr ", "sr.", "lead", "principal", "staff", "head of", "director", "architect", "manager"))
+        _is_junior = any(k in _tl for k in ("junior", "entry", "jr.", " jr ", "associate", "graduate", "intern", "trainee"))
+        if _cfg_sen == "Junior / Entry-level" and _is_senior and not _is_junior:
+            return 0.0, json.dumps({"reason": "Senior role — filtered by Junior preference", "matched": [], "missing": []})
+        if _cfg_sen == "Senior" and _is_junior and not _is_senior:
+            return 0.0, json.dumps({"reason": "Junior role — filtered by Senior preference", "matched": [], "missing": []})
+
     # 2. Experience check — penalty (not hard block) if 3+ years required
     exp_pts, exp_reason = _experience_pts(title, desc)
 

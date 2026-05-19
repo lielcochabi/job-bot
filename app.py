@@ -1586,24 +1586,27 @@ if "Dashboard" in page:
         st.caption(":material/info: Start by uploading your resume in **Settings → Resume**.")
 
     col1, col2, col3, col4 = st.columns(4)
-    if col1.button("Search jobs",    use_container_width=True,
+    if col1.button("Search →",       use_container_width=True,
                    type="primary" if _active == 1 else "secondary"): _go("Search")
-    if col2.button(_mlabel, use_container_width=True,
+    if col2.button("Review matches", use_container_width=True,
                    type="primary" if _active == 2 else "secondary",
-                   disabled=not _has_jobs):
-        if not _has_resume:
-            st.warning("Upload your resume in Settings first.")
-        else:
-            launch_task([PYTHON, "-u", "main.py"] + _mcmd, "task_rematch")
-    if col3.button("Review matches", use_container_width=True,
-                   type="primary" if _active == 3 else "secondary",
                    disabled=not _has_matches): _go("Matched")
+    if col3.button("Apply →",        use_container_width=True,
+                   type="primary" if _active == 3 else "secondary",
+                   disabled=not _has_matches): _go("Apply")
     if col4.button("Full pipeline",  use_container_width=True, disabled=not _has_resume):
         launch_task([PYTHON, "-u", "main.py", "run", "--auto"], "task_run")
 
     for key, label in [("task_run", "Full Pipeline"), ("task_rematch", "Score"), ("task_search", "Search")]:
-        if st.session_state.get(key):   # only register fragment when task exists
+        if st.session_state.get(key):
             live_task_panel(key, label)
+
+    with st.expander(":material/delete_sweep: Clear job database", expanded=False):
+        st.caption("Remove all unmatched/unapplied jobs so you can start a fresh search for a different field.")
+        if st.button(":material/delete: Clear all non-applied jobs", type="secondary"):
+            _deleted = database.cleanup_old_jobs(days=0)  # days=0 wipes everything unapplied
+            st.toast(f"Removed {_deleted} jobs.", icon=":material/check:")
+            st.rerun()
 
     if _has_matches:
         st.divider()
@@ -1651,7 +1654,7 @@ elif "Search" in page:
     _sel_cats = st.pills(
         "categories",
         list(_cats_data.keys()),
-        default=_saved_cats if _saved_cats else None,
+        default=_saved_cats or [],   # empty = nothing pre-selected; user must choose
         selection_mode="multi",
         label_visibility="collapsed",
     )
@@ -2041,6 +2044,13 @@ elif "Settings" in page:
             threshold   = st.slider("Score threshold (%)", 50, 95, int(cfg.get("match_threshold", 70)))
         with col2:
             expiry_days = st.number_input("Expire jobs after (days)", min_value=7, max_value=90, value=int(cfg.get("job_expiry_days", 30)))
+        _sen_opts = ["Any", "Junior / Entry-level", "Mid-level", "Senior"]
+        seniority = st.segmented_control(
+            "Seniority filter",
+            _sen_opts,
+            default=cfg.get("seniority", "Any"),
+            help="Only keep jobs that match this level. Mis-matched roles are scored 0 and skipped.",
+        )
         _loc_opts_s = ["Israel (on-site + remote)", "Remote only", "Worldwide"]
         _cur_loc    = cfg.get("location_mode", "Israel (on-site + remote)")
         if _cur_loc not in _loc_opts_s:
@@ -2076,6 +2086,7 @@ elif "Settings" in page:
         cfg["remote_only"]      = location_mode == "Remote only"   # keep for backward compat
         cfg["match_threshold"]  = threshold
         cfg["job_expiry_days"]  = expiry_days
+        cfg["seniority"]        = seniority or "Any"
         cfg["profile"] = {
             "name": name, "email": email, "phone": phone,
             "city": city, "website": website,
