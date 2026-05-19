@@ -447,35 +447,43 @@ if "username" not in st.session_state:
 # ---------------------------------------------------------------------------
 
 def show_auth_page():
-    st.markdown("""
-    <div class="auth-wrap">
-        <div style="font-size:1.3rem;font-weight:600;color:#e6edf3;
-                    text-align:center;margin-bottom:0.25rem;letter-spacing:-0.025em">
-            Job Bot
-        </div>
-        <div style="font-size:0.8rem;color:#3d5070;text-align:center;
-                    margin-bottom:2rem;letter-spacing:0.01em">
-            Automated job search assistant
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Centre the form using spacer columns
     _, mid, _ = st.columns([1, 1.6, 1])
     with mid:
-        # Google sign-in (only shown if credentials are configured)
-        if os.environ.get("GOOGLE_CLIENT_ID"):
+        st.markdown(
+            '<div style="text-align:center;margin-bottom:1.5rem">'
+            '<div style="font-size:1.4rem;font-weight:700;color:#e6edf3;letter-spacing:-0.025em">:material/robot: Job Bot</div>'
+            '<div style="font-size:0.82rem;color:#3d5070;margin-top:4px">Automated job search — Israel & remote</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+        # ── Google sign-in ───────────────────────────────────────────────
+        _has_google = bool(os.environ.get("GOOGLE_CLIENT_ID"))
+        if _has_google:
             st.link_button(
-                "Sign in with Google",
+                ":material/login: Continue with Google",
                 _google_oauth_url(),
                 use_container_width=True,
+                type="primary",
             )
-            st.markdown(
-                '<div style="text-align:center;color:#475569;font-size:0.8rem;margin:8px 0">or</div>',
-                unsafe_allow_html=True,
+        else:
+            st.button(
+                ":material/login: Continue with Google",
+                use_container_width=True,
+                disabled=True,
+                help="Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to Streamlit secrets to enable Google sign-in.",
             )
 
-        tab_login, tab_signup = st.tabs(["Log In", "Sign Up"])
+        st.markdown(
+            '<div style="display:flex;align-items:center;gap:8px;margin:12px 0">'
+            '<hr style="flex:1;border:none;border-top:1px solid #1e2c42;margin:0">'
+            '<span style="color:#3d5070;font-size:0.78rem">or</span>'
+            '<hr style="flex:1;border:none;border-top:1px solid #1e2c42;margin:0">'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+        tab_login, tab_signup = st.tabs([":material/login: Log in", ":material/person_add: Sign up"])
 
         with tab_login:
             lu  = st.text_input("Username", key="li_user", placeholder="your username")
@@ -514,14 +522,9 @@ def show_auth_page():
                         st.error(msg)
 
         # Guest access
-        st.markdown("---")
-        st.markdown(
-            '<div style="text-align:center;color:#64748b;font-size:0.85rem;margin-bottom:8px">'
-            'Just browsing? View the dashboard without an account.'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-        if st.button("Continue as Guest", use_container_width=True, key="guest_btn"):
+        st.divider()
+        st.caption("Just browsing? View the dashboard without an account.")
+        if st.button(":material/visibility: Continue as Guest", use_container_width=True, key="guest_btn"):
             st.session_state["username"] = "__guest__"
             st.session_state["is_guest"] = True
             st.rerun()
