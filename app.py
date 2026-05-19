@@ -1537,10 +1537,15 @@ elif "Search" in page:
     _sel_cats = st.pills(
         "categories",
         list(_cats_data.keys()),
-        default=_saved_cats or [],   # empty = nothing pre-selected; user must choose
+        default=_saved_cats or [],
         selection_mode="multi",
         label_visibility="collapsed",
     )
+    # Auto-save categories immediately so they survive page changes
+    if sorted(_sel_cats or []) != sorted(_saved_cats or []):
+        _cfg_live = load_config()
+        _cfg_live["selected_categories"] = list(_sel_cats or [])
+        save_config(_cfg_live)
 
     # Derive titles from selected categories + any custom titles saved in Settings
     _from_cats: list[str] = []
@@ -1553,9 +1558,11 @@ elif "Search" in page:
     # Reset title selection when categories change
     _cats_sig = "|".join(sorted(_sel_cats or []))
     if st.session_state.get("_search_cats_sig") != _cats_sig:
-        st.session_state["_search_cats_sig"]    = _cats_sig
-        st.session_state["search_title_default"] = []   # user picks titles manually
-        st.session_state["search_title_ver"]     = st.session_state.get("search_title_ver", 0) + 1
+        st.session_state["_search_cats_sig"] = _cats_sig
+        # Restore last-saved titles that are still valid for the current categories
+        _last_titles = cfg.get("selected_titles", [])
+        st.session_state["search_title_default"] = [t for t in _last_titles if t in all_titles]
+        st.session_state["search_title_ver"] = st.session_state.get("search_title_ver", 0) + 1
 
     selected_titles = []
 
@@ -1591,8 +1598,13 @@ elif "Search" in page:
             label_visibility="collapsed",
             key=f"search_ms_{st.session_state['search_title_ver']}",
         )
-        # Persist current selection so it survives navigation and reruns
+        # Persist in session and auto-save to config so next visit restores selection
         st.session_state["search_title_default"] = list(selected_titles)
+        _saved_titles = load_config().get("selected_titles", [])
+        if sorted(selected_titles) != sorted(_saved_titles):
+            _cfg_live2 = load_config()
+            _cfg_live2["selected_titles"] = list(selected_titles)
+            save_config(_cfg_live2)
 
     _loc_opts = ["Israel (on-site + remote)", "Remote only", "Worldwide"]
     if "search_loc" not in st.session_state:

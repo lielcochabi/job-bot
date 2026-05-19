@@ -101,6 +101,42 @@ def search(
     )
     console.print(f"  Found [bold]{len(jobs)}[/bold] raw listings, saving...")
 
+    # ── Title relevance filter ─────────────────────────────────────────────
+    # Job boards match on DESCRIPTION, so "Python Developer" returns "Full
+    # Stack Developer" if Python appears in the body.  We only keep a job
+    # when its TITLE shares at least one meaningful keyword with the queries.
+    _GENERIC_WORDS = {
+        "developer", "engineer", "designer", "manager", "analyst", "architect",
+        "specialist", "consultant", "expert", "lead", "head", "director",
+        "officer", "intern", "trainee", "associate", "coordinator", "programmer",
+        "coder", "technician", "admin", "administrator", "staff",
+    }
+    _GARBAGE_TITLES = {
+        "unknown", "n/a", "untitled", "job", "position", "role",
+        "opportunity", "opening", "vacancy",
+    }
+
+    def _title_relevant(job_title: str) -> bool:
+        tl = job_title.lower().strip()
+        if tl in _GARBAGE_TITLES or len(tl) < 4:
+            return False
+        for q in queries:
+            ql = q.lower()
+            # Direct containment (most reliable)
+            if ql in tl or tl in ql:
+                return True
+            # Normalised (full-stack vs full stack, node.js vs nodejs)
+            tl_n = tl.replace(" ", "").replace("-", "").replace(".", "")
+            ql_n = ql.replace(" ", "").replace("-", "").replace(".", "")
+            if ql_n in tl_n or tl_n in ql_n:
+                return True
+            # Domain-keyword match: non-generic words from query in title
+            domain = [w for w in ql.split()
+                      if w not in _GENERIC_WORDS and len(w) >= 2]
+            if domain and any(w in tl for w in domain):
+                return True
+        return False
+
     # Seniority pre-filter — skip mismatched roles before they enter the DB
     _seniority_pref = cfg.get("seniority", "Any")
     _SENIOR_KW = {"senior", "sr.", " sr ", "lead", "principal", "staff",
@@ -124,12 +160,17 @@ def search(
     skip_count     = 0
     dupe_count     = 0
     seniority_skip = 0
+    relevance_skip = 0
     for job in jobs:
         title = (job.get("title") or "").strip()
         url   = (job.get("url")   or "").strip()
-        # Skip blank or obviously useless entries
-        if not title or not url or len(title) < 3:
+        # Skip blank / garbage
+        if not title or not url or len(title) < 4:
             skip_count += 1
+            continue
+        # Skip irrelevant titles (title doesn't match any queried title)
+        if not _title_relevant(title):
+            relevance_skip += 1
             continue
         # Skip seniority mismatch
         if not _seniority_ok(title):
@@ -151,11 +192,13 @@ def search(
             dupe_count += 1
 
     stats = database.get_stats()
-    sen_msg = f"  |  {seniority_skip} filtered by seniority ({_seniority_pref})" if seniority_skip else ""
     console.print(
-        f"\n[green][OK][/green] [bold]{new_count}[/bold] new  |  "
-        f"{dupe_count} already in DB  |  {skip_count} skipped (no title/url)"
-        f"{sen_msg}  |  total: {stats['total']}"
+        f"\n[green][OK][/green] [bold]{new_count}[/bold] new"
+        f"  |  {dupe_count} already in DB"
+        f"  |  {relevance_skip} irrelevant title"
+        + (f"  |  {seniority_skip} wrong seniority" if seniority_skip else "")
+        + (f"  |  {skip_count} blank/garbage" if skip_count else "")
+        + f"  |  total: {stats['total']}"
     )
 
 
