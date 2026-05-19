@@ -1304,6 +1304,7 @@ def _card(job: dict, key_prefix: str = "card", *,
                             _msg   = _MIME()
                             _msg["From"]    = _from_addr
                             _msg["To"]      = _contact
+                            _msg["Bcc"]     = _from_addr   # copy to self = proof of delivery
                             _msg["Subject"] = f"Application for {title}" + (f" — {_pname}" if _pname else "")
                             _msg.attach(_MIMEText(_answers.get("cover_letter", ""), "plain"))
                             if _rbytes:
@@ -1315,11 +1316,12 @@ def _card(job: dict, key_prefix: str = "card", *,
                             with smtplib.SMTP("smtp.gmail.com", 587) as _srv:
                                 _srv.starttls()
                                 _srv.login(_from_addr, _gmail_pw)
-                                _srv.sendmail(_from_addr, _contact, _msg.as_string())
+                                # sendmail recipients must include BCC manually
+                                _srv.sendmail(_from_addr, [_contact, _from_addr], _msg.as_string())
                             _sent_email = True
                             st.toast(f"Email + resume sent to {_contact}", icon=":material/check:")
                         except Exception as _mail_err:
-                            st.warning(f"Email send failed: {_mail_err}")
+                            st.warning(f":material/error: Email send failed: {_mail_err}")
 
                     # ── Path B: ATS / HTML form ────────────────────────────
                     if not _sent_email and url:
@@ -1329,6 +1331,44 @@ def _card(job: dict, key_prefix: str = "card", *,
                             st.toast("Application form submitted!", icon=":material/check:")
                         elif _form_status == "partial":
                             st.toast("Form submitted — please verify on the job site.", icon=":material/info:")
+
+                    # ── Confirmation email to self (always, whatever path was taken) ──
+                    _conf_from = os.environ.get("NOTIFY_EMAIL", "")
+                    _conf_pw   = os.environ.get("GMAIL_APP_PASSWORD", "")
+                    if _conf_from and _conf_pw:
+                        try:
+                            import smtplib as _smtplib2
+                            from email.mime.multipart import MIMEMultipart as _MIME2
+                            from email.mime.text     import MIMEText     as _MIMEText2
+                            from datetime            import datetime     as _dt
+                            _method_now = (
+                                "Email + resume" if _sent_email else
+                                f"ATS form ({_form_status})" if _form_status in ("sent", "partial") else
+                                "Cheat sheet only (manual apply needed)"
+                            )
+                            _conf = _MIME2()
+                            _conf["From"]    = _conf_from
+                            _conf["To"]      = _conf_from
+                            _conf["Subject"] = f"[Job Bot] Applied: {title} at {company}"
+                            _body = (
+                                f"Job Bot application confirmation\n"
+                                f"{'='*50}\n\n"
+                                f"Job:     {title}\n"
+                                f"Company: {company}\n"
+                                f"URL:     {url}\n"
+                                f"Method:  {_method_now}\n"
+                                f"Sent to: {_contact or 'no contact email found'}\n"
+                                f"Time:    {_dt.utcnow().strftime('%Y-%m-%d %H:%M UTC')}\n\n"
+                                f"--- Cover letter sent ---\n\n"
+                                f"{_answers.get('cover_letter', '(none)')}\n"
+                            )
+                            _conf.attach(_MIMEText2(_body, "plain"))
+                            with _smtplib2.SMTP("smtp.gmail.com", 587) as _srv2:
+                                _srv2.starttls()
+                                _srv2.login(_conf_from, _conf_pw)
+                                _srv2.sendmail(_conf_from, _conf_from, _conf.as_string())
+                        except Exception:
+                            pass   # confirmation email failure is non-critical
 
                     # Persist state for display below
                     st.session_state[f"_ai_ans_{jid}"]     = _answers
