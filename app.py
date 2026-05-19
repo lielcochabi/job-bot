@@ -803,6 +803,51 @@ def load_config() -> dict:
     return _load_config_cached(_username)
 
 
+def _notify(message: str) -> tuple[bool, str]:
+    """
+    Send a notification via Telegram (primary) or Gmail (fallback).
+    Returns (success, error_message).
+    """
+    tg_token   = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    tg_chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
+
+    # ── Telegram (preferred — no SMTP issues) ──────────────────────────────
+    if tg_token and tg_chat_id:
+        try:
+            import httpx as _hx
+            r = _hx.post(
+                f"https://api.telegram.org/bot{tg_token}/sendMessage",
+                json={"chat_id": tg_chat_id, "text": message, "parse_mode": "Markdown"},
+                timeout=10,
+            )
+            r.raise_for_status()
+            return True, ""
+        except Exception as e:
+            return False, f"Telegram error: {e}"
+
+    # ── Gmail SMTP (fallback) ──────────────────────────────────────────────
+    smtp_from = os.environ.get("NOTIFY_EMAIL", "")
+    smtp_pw   = os.environ.get("GMAIL_APP_PASSWORD", "")
+    user_email = load_config().get("profile", {}).get("email", smtp_from)
+    if smtp_from and smtp_pw and user_email:
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            msg = MIMEText(message, "plain")
+            msg["From"]    = smtp_from
+            msg["To"]      = user_email
+            msg["Subject"] = "[Job Bot] Application confirmation"
+            with smtplib.SMTP("smtp.gmail.com", 587) as s:
+                s.starttls()
+                s.login(smtp_from, smtp_pw)
+                s.sendmail(smtp_from, user_email, msg.as_string())
+            return True, ""
+        except Exception as e:
+            return False, f"Gmail error (pw starts '{smtp_pw[:4]}…'): {e}"
+
+    return False, "No notification method configured (add TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID to Streamlit secrets)"
+
+
 def save_config(cfg: dict):
     database.save_config(cfg)
     _load_config_cached.clear()   # invalidate cache after save
@@ -1344,45 +1389,22 @@ def _card(job: dict, key_prefix: str = "card", *,
                         with st.spinner("Trying to auto-fill application form…"):
                             _form_status, _form_msg = _try_form_submit(url, _answers, _rbytes, _rname)
 
-                    # ── Confirmation email → user's profile email ──────────
-                    _conf_sent = False
-                    _conf_err  = ""
-                    if not _user_email:
-                        _conf_err = "Add your email in Settings → Profile to receive confirmations"
-                    elif not _smtp_from or not _smtp_pw:
-                        _conf_err = "NOTIFY_EMAIL or GMAIL_APP_PASSWORD not set in Streamlit secrets"
-                    else:
-                        try:
-                            import smtplib as _smtp2
-                            from email.mime.multipart import MIMEMultipart as _MIME2
-                            from email.mime.text     import MIMEText     as _MT2
-                            from datetime            import datetime     as _dt
-                            _method_label = (
-                                "Email + resume" if _sent_email else
-                                f"ATS form ({_form_status})" if _form_status in ("sent", "partial") else
-                                "Cheat sheet only (manual apply needed)"
-                            )
-                            _c = _MIME2()
-                            _c["From"]    = _smtp_from
-                            _c["To"]      = _user_email
-                            _c["Subject"] = f"[Job Bot] Applied: {title} at {company}"
-                            _c.attach(_MT2(
-                                f"Job Bot confirmation\n{'='*48}\n\n"
-                                f"Job:     {title}\nCompany: {company}\nURL:     {url}\n"
-                                f"Method:  {_method_label}\n"
-                                f"Sent to: {_contact or 'no contact email found'}\n"
-                                f"Time:    {_dt.utcnow().strftime('%Y-%m-%d %H:%M UTC')}\n\n"
-                                f"--- Cover letter ---\n\n{_answers.get('cover_letter', '(none)')}\n",
-                                "plain",
-                            ))
-                            with _smtp2.SMTP("smtp.gmail.com", 587) as _s2:
-                                _s2.starttls()
-                                _s2.login(_smtp_from, _smtp_pw)
-                                _s2.sendmail(_smtp_from, _user_email, _c.as_string())
-                            _conf_sent = True
-                        except Exception as _ce:
-                            _conf_err = (f"SMTP from {_smtp_from} "
-                                         f"(password '{_smtp_pw[:4]}…'): {_ce}")
+                    # ── Confirmation notification (Telegram or Gmail) ──────
+                    from datetime import datetime as _dt
+                    _method_label = (
+                        "Email + resume" if _sent_email else
+                        f"ATS form ({_form_status})" if _form_status in ("sent", "partial") else
+                        "Cheat sheet — apply manually"
+                    )
+                    _notif_msg = (
+                        f"*[Job Bot] Applied: {title} at {company}*\n\n"
+                        f"Method: {_method_label}\n"
+                        f"Sent to: {_contact or 'no employer email found'}\n"
+                        f"Time: {_dt.utcnow().strftime('%Y-%m-%d %H:%M UTC')}\n"
+                        f"URL: {url}\n\n"
+                        f"Cover letter:\n{(_answers.get('cover_letter') or '')[:800]}"
+                    )
+                    _conf_sent, _conf_err = _notify(_notif_msg)
 
                     # Persist state for display below (survives rerun)
                     st.session_state[f"_ai_ans_{jid}"]       = _answers
@@ -1434,10 +1456,10 @@ def _card(job: dict, key_prefix: str = "card", *,
 
                 # Confirmation email status — this is the clearest proof
                 if _conf_sent:
-                    _dest = load_config().get("profile", {}).get("email", "your inbox")
-                    st.success(f":material/mark_email_read: Confirmation email sent to **{_dest}** — if it arrived, the application went through")
+                    _via = "Telegram" if os.environ.get("TELEGRAM_BOT_TOKEN") else "email"
+                    st.success(f":material/check: Confirmation sent via {_via} — if it arrived, the application went through")
                 elif _conf_err:
-                    st.warning(f":material/warning: Confirmation email failed: {_conf_err}")
+                    st.warning(f":material/warning: Notification failed: {_conf_err}")
 
                 _show_apply_cheatsheet(_ans, job)
 
