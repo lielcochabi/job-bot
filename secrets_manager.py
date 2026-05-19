@@ -36,10 +36,9 @@ def inject_all_into_env() -> None:
             for k, v in mapping.items():
                 full_key = f"{prefix}{k}" if not prefix else f"{prefix}_{k}"
                 if isinstance(v, str):
-                    if full_key not in os.environ:
-                        os.environ[full_key] = v
-                    # Also inject without prefix for top-level keys
-                    if not prefix and k not in os.environ:
+                    # Always overwrite — st.secrets is the authoritative source
+                    os.environ[full_key] = v
+                    if not prefix:
                         os.environ[k] = v
                 elif hasattr(v, "items"):
                     _flatten(v, prefix=k.upper() + "_" if not prefix else prefix + k.upper() + "_")

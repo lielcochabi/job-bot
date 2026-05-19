@@ -1780,8 +1780,18 @@ elif "Search" in page:
                 display = [j for j in recent if fl in (j.get("title") or "").lower()
                            or fl in (j.get("company") or "").lower()]
 
-            for job in display[:150]:
+            # Split: new (found/unscored) first, already-processed below a divider
+            _new_jobs  = [j for j in display[:150] if j.get("status") in ("found", "matched")]
+            _done_jobs = [j for j in display[:150] if j.get("status") in ("applied", "skipped")]
+
+            for job in _new_jobs:
                 _card(job, key_prefix=f"srch_{job.get('id','')}", show_status=True)
+
+            if _done_jobs:
+                with st.expander(f":material/history: Already processed ({len(_done_jobs)})", expanded=False):
+                    st.caption("These were already applied to or skipped in a previous session.")
+                    for job in _done_jobs:
+                        _card(job, key_prefix=f"srch_done_{job.get('id','')}", show_status=True)
         else:
             st.caption("No jobs found in the last 24 hours.")
 

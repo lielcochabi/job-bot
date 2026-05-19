@@ -101,12 +101,20 @@ def search(
     )
     console.print(f"  Found [bold]{len(jobs)}[/bold] raw listings, saving...")
 
-    new_count = 0
+    new_count  = 0
+    skip_count = 0
+    dupe_count = 0
     for job in jobs:
+        title = (job.get("title") or "").strip()
+        url   = (job.get("url")   or "").strip()
+        # Skip blank or obviously useless entries
+        if not title or not url or len(title) < 3:
+            skip_count += 1
+            continue
         result = database.upsert_job(
             source=job["source"],
-            title=job["title"],
-            url=job["url"],
+            title=title,
+            url=url,
             company=job.get("company", ""),
             location=job.get("location", ""),
             salary=job.get("salary", ""),
@@ -115,9 +123,15 @@ def search(
         )
         if result is not None:
             new_count += 1
+        else:
+            dupe_count += 1
 
     stats = database.get_stats()
-    console.print(f"\n[green][OK][/green] Added [bold]{new_count}[/bold] new jobs (total in DB: {stats['total']})")
+    console.print(
+        f"\n[green][OK][/green] [bold]{new_count}[/bold] new  |  "
+        f"{dupe_count} already in DB  |  {skip_count} skipped (no title/url)  "
+        f"|  total: {stats['total']}"
+    )
 
 
 # ---------------------------------------------------------------------------
