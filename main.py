@@ -101,15 +101,39 @@ def search(
     )
     console.print(f"  Found [bold]{len(jobs)}[/bold] raw listings, saving...")
 
-    new_count  = 0
-    skip_count = 0
-    dupe_count = 0
+    # Seniority pre-filter — skip mismatched roles before they enter the DB
+    _seniority_pref = cfg.get("seniority", "Any")
+    _SENIOR_KW = {"senior", "sr.", " sr ", "lead", "principal", "staff",
+                  "head of", "director", "architect", "manager", "vp "}
+    _JUNIOR_KW = {"junior", "entry", "jr.", " jr ", "associate",
+                  "graduate", "intern", "trainee"}
+
+    def _seniority_ok(title: str) -> bool:
+        if _seniority_pref == "Any":
+            return True
+        tl = title.lower()
+        is_senior = any(k in tl for k in _SENIOR_KW)
+        is_junior = any(k in tl for k in _JUNIOR_KW)
+        if _seniority_pref == "Junior / Entry-level" and is_senior and not is_junior:
+            return False
+        if _seniority_pref == "Senior" and is_junior and not is_senior:
+            return False
+        return True
+
+    new_count      = 0
+    skip_count     = 0
+    dupe_count     = 0
+    seniority_skip = 0
     for job in jobs:
         title = (job.get("title") or "").strip()
         url   = (job.get("url")   or "").strip()
         # Skip blank or obviously useless entries
         if not title or not url or len(title) < 3:
             skip_count += 1
+            continue
+        # Skip seniority mismatch
+        if not _seniority_ok(title):
+            seniority_skip += 1
             continue
         result = database.upsert_job(
             source=job["source"],
@@ -127,10 +151,11 @@ def search(
             dupe_count += 1
 
     stats = database.get_stats()
+    sen_msg = f"  |  {seniority_skip} filtered by seniority ({_seniority_pref})" if seniority_skip else ""
     console.print(
         f"\n[green][OK][/green] [bold]{new_count}[/bold] new  |  "
-        f"{dupe_count} already in DB  |  {skip_count} skipped (no title/url)  "
-        f"|  total: {stats['total']}"
+        f"{dupe_count} already in DB  |  {skip_count} skipped (no title/url)"
+        f"{sen_msg}  |  total: {stats['total']}"
     )
 
 
