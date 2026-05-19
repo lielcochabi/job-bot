@@ -803,51 +803,6 @@ def load_config() -> dict:
     return _load_config_cached(_username)
 
 
-def _notify(message: str) -> tuple[bool, str]:
-    """
-    Send a notification via Telegram (primary) or Gmail (fallback).
-    Returns (success, error_message).
-    """
-    tg_token   = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-    tg_chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
-
-    # ── Telegram (preferred — no SMTP issues) ──────────────────────────────
-    if tg_token and tg_chat_id:
-        try:
-            import httpx as _hx
-            r = _hx.post(
-                f"https://api.telegram.org/bot{tg_token}/sendMessage",
-                json={"chat_id": tg_chat_id, "text": message, "parse_mode": "Markdown"},
-                timeout=10,
-            )
-            r.raise_for_status()
-            return True, ""
-        except Exception as e:
-            return False, f"Telegram error: {e}"
-
-    # ── Gmail SMTP (fallback) ──────────────────────────────────────────────
-    smtp_from = os.environ.get("NOTIFY_EMAIL", "")
-    smtp_pw   = os.environ.get("GMAIL_APP_PASSWORD", "")
-    user_email = load_config().get("profile", {}).get("email", smtp_from)
-    if smtp_from and smtp_pw and user_email:
-        try:
-            import smtplib
-            from email.mime.text import MIMEText
-            msg = MIMEText(message, "plain")
-            msg["From"]    = smtp_from
-            msg["To"]      = user_email
-            msg["Subject"] = "[Job Bot] Application confirmation"
-            with smtplib.SMTP("smtp.gmail.com", 587) as s:
-                s.starttls()
-                s.login(smtp_from, smtp_pw)
-                s.sendmail(smtp_from, user_email, msg.as_string())
-            return True, ""
-        except Exception as e:
-            return False, f"Gmail error (pw starts '{smtp_pw[:4]}…'): {e}"
-
-    return False, "No notification method configured (add TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID to Streamlit secrets)"
-
-
 def save_config(cfg: dict):
     database.save_config(cfg)
     _load_config_cached.clear()   # invalidate cache after save
@@ -1309,7 +1264,6 @@ def _card(job: dict, key_prefix: str = "card", *,
                 disabled=not _has_ai_key,
                 help=(
                     "Generates all form answers from your resume, then:\n"
-                    "• Sends email + resume if a contact address is found\n"
                     "• Auto-fills Greenhouse / Lever forms\n"
                     "• Shows a Quick Apply Cheat Sheet for everything else"
                 ) if _has_ai_key else "Add OPENROUTER_API_KEY to Streamlit secrets to enable.",
@@ -1333,133 +1287,38 @@ def _card(job: dict, key_prefix: str = "card", *,
                     if not _rname:
                         _rname = "resume.pdf"
 
-                    # ── Path A: email contact found in job description ──────
-                    _desc_full   = job.get("description", "")
-                    _emails_desc = re.findall(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", _desc_full)
-                    _skip_emails = {"noreply", "no-reply", "donotreply", "privacy", "legal", "info@linkedin"}
-                    _contact     = next((e for e in _emails_desc if not any(b in e.lower() for b in _skip_emails)), None)
-
-                    # Shared SMTP sender credentials (from Streamlit secrets)
-                    _smtp_from   = os.environ.get("NOTIFY_EMAIL", "")
-                    _smtp_pw     = os.environ.get("GMAIL_APP_PASSWORD", "")
-                    _sent_email  = False
+                    # Try to auto-fill ATS form (Greenhouse / Lever / generic HTML)
                     _form_status = ""
                     _form_msg    = ""
-                    # Per-user destination — set in Settings → Profile → Email
-                    _user_email = load_config().get("profile", {}).get("email", "")
-                    _email_err  = ""   # captured here, shown after rerun
-
-                    if _contact and _smtp_from and _smtp_pw:
-                        try:
-                            import smtplib
-                            from email.mime.multipart import MIMEMultipart as _MIME
-                            from email.mime.text     import MIMEText     as _MIMEText
-                            from email.mime.base     import MIMEBase     as _MIMEBase
-                            from email              import encoders      as _enc
-                            _pname = load_config().get("profile", {}).get("name", "")
-                            _msg   = _MIME()
-                            _msg["From"]    = _smtp_from
-                            _msg["To"]      = _contact
-                            _msg["Subject"] = f"Application for {title}" + (f" — {_pname}" if _pname else "")
-                            _msg.attach(_MIMEText(_answers.get("cover_letter", ""), "plain"))
-                            if _rbytes:
-                                _att = _MIMEBase("application", "octet-stream")
-                                _att.set_payload(_rbytes)
-                                _enc.encode_base64(_att)
-                                _att.add_header("Content-Disposition", f'attachment; filename="{_rname}"')
-                                _msg.attach(_att)
-                            # Recipients: employer + user's own email as BCC (if set)
-                            _recipients = [_contact]
-                            if _user_email and _user_email != _contact:
-                                _msg["Bcc"] = _user_email
-                                _recipients.append(_user_email)
-                            with smtplib.SMTP("smtp.gmail.com", 587) as _srv:
-                                _srv.starttls()
-                                _srv.login(_smtp_from, _smtp_pw)
-                                _srv.sendmail(_smtp_from, _recipients, _msg.as_string())
-                            _sent_email = True
-                        except Exception as _mail_err:
-                            _email_err = (f"SMTP error sending from {_smtp_from} "
-                                          f"(password starts with '{_smtp_pw[:4]}…'): {_mail_err}")
-                    elif not _smtp_from or not _smtp_pw:
-                        _email_err = "NOTIFY_EMAIL or GMAIL_APP_PASSWORD not set in Streamlit secrets"
-
-                    # ── Path B: ATS / HTML form ────────────────────────────
-                    if not _sent_email and url:
+                    if url:
                         with st.spinner("Trying to auto-fill application form…"):
                             _form_status, _form_msg = _try_form_submit(url, _answers, _rbytes, _rname)
 
-                    # ── Confirmation notification (Telegram or Gmail) ──────
-                    from datetime import datetime as _dt
-                    _method_label = (
-                        "Email + resume" if _sent_email else
-                        f"ATS form ({_form_status})" if _form_status in ("sent", "partial") else
-                        "Cheat sheet — apply manually"
-                    )
-                    _notif_msg = (
-                        f"*[Job Bot] Applied: {title} at {company}*\n\n"
-                        f"Method: {_method_label}\n"
-                        f"Sent to: {_contact or 'no employer email found'}\n"
-                        f"Time: {_dt.utcnow().strftime('%Y-%m-%d %H:%M UTC')}\n"
-                        f"URL: {url}\n\n"
-                        f"Cover letter:\n{(_answers.get('cover_letter') or '')[:800]}"
-                    )
-                    _conf_sent, _conf_err = _notify(_notif_msg)
-
                     # Persist state for display below (survives rerun)
-                    st.session_state[f"_ai_ans_{jid}"]       = _answers
-                    st.session_state[f"_ai_email_{jid}"]     = _contact
-                    st.session_state[f"_ai_sent_{jid}"]      = _sent_email
-                    st.session_state[f"_ai_fstatus_{jid}"]   = _form_status
-                    st.session_state[f"_ai_fmsg_{jid}"]      = _form_msg
-                    st.session_state[f"_ai_email_err_{jid}"] = _email_err
-                    st.session_state[f"_ai_conf_sent_{jid}"] = _conf_sent
-                    st.session_state[f"_ai_conf_err_{jid}"]  = _conf_err
+                    st.session_state[f"_ai_ans_{jid}"]     = _answers
+                    st.session_state[f"_ai_fstatus_{jid}"] = _form_status
+                    st.session_state[f"_ai_fmsg_{jid}"]    = _form_msg
 
-                    # Only mark as applied when something was actually sent
-                    _actually_sent = _sent_email or _form_status in ("sent", "partial")
-                    if _actually_sent:
-                        _method = "AI Email" if _sent_email else "AI Form"
-                        database.set_applied(jid, _method)
-                    # If only a cheat sheet was shown the job stays in "matched"
-                    # so it remains in the Apply queue until the user acts on it.
+                    # Only mark as applied if the form was actually submitted
+                    if _form_status in ("sent", "partial"):
+                        database.set_applied(jid, "AI Form")
                     st.rerun()
 
             # ── Show results panel ─────────────────────────────────────────────
             if f"_ai_ans_{jid}" in st.session_state:
-                _ans        = st.session_state[f"_ai_ans_{jid}"]
-                _was_sent   = st.session_state.get(f"_ai_sent_{jid}", False)
-                _to_addr    = st.session_state.get(f"_ai_email_{jid}", "")
-                _fst        = st.session_state.get(f"_ai_fstatus_{jid}", "")
-                _fmsg       = st.session_state.get(f"_ai_fmsg_{jid}", "")
-                _email_err  = st.session_state.get(f"_ai_email_err_{jid}", "")
-                _conf_sent  = st.session_state.get(f"_ai_conf_sent_{jid}", False)
-                _conf_err   = st.session_state.get(f"_ai_conf_err_{jid}", "")
+                _ans  = st.session_state[f"_ai_ans_{jid}"]
+                _fst  = st.session_state.get(f"_ai_fstatus_{jid}", "")
+                _fmsg = st.session_state.get(f"_ai_fmsg_{jid}", "")
 
-                # Application outcome
-                if _was_sent:
-                    st.success(f":material/check: Application email + resume sent to **{_to_addr}** — check your inbox for the BCC copy")
-                elif _fst == "sent":
-                    st.success(f":material/check: {_fmsg}")
+                if _fst == "sent":
+                    st.success(f":material/check: {_fmsg} — click **Mark applied** to log it.")
                 elif _fst == "partial":
-                    st.info(f":material/info: {_fmsg}")
-                elif _email_err:
-                    st.error(f":material/error: Could not send email — {_email_err}")
-                    st.info(":material/info: Use the cheat sheet below to apply manually, then click **Mark applied** when done.")
+                    st.info(f":material/info: {_fmsg} — verify on the job site, then click **Mark applied**.")
                 else:
-                    st.info(":material/info: This job has no contact email in its description and the form "
-                            "couldn't be auto-submitted. Open the job link, fill in the form using the answers "
-                            "below, then click **Mark applied**.")
-
-                if _fmsg and _fst not in ("sent", "partial"):
-                    st.caption(f"Form attempt: {_fmsg}")
-
-                # Confirmation email status — this is the clearest proof
-                if _conf_sent:
-                    _via = "Telegram" if os.environ.get("TELEGRAM_BOT_TOKEN") else "email"
-                    st.success(f":material/check: Confirmation sent via {_via} — if it arrived, the application went through")
-                elif _conf_err:
-                    st.warning(f":material/warning: Notification failed: {_conf_err}")
+                    st.info(":material/info: Open the job link, fill the form using the answers below, "
+                            "then click **Mark applied**.")
+                    if _fmsg:
+                        st.caption(f"Form attempt: {_fmsg}")
 
                 _show_apply_cheatsheet(_ans, job)
 
