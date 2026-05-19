@@ -960,13 +960,26 @@ def search_all_sources(
 
     with ThreadPoolExecutor(max_workers=6) as executor:
         futures = {executor.submit(run_source, name): name for name in queue}
-        for future in as_completed(futures, timeout=180):
-            try:
-                _, jobs = future.result()
-                with results_lock:
-                    all_jobs.extend(jobs)
-            except Exception as e:
-                print(f"  Source error: {e}")
+        try:
+            for future in as_completed(futures, timeout=300):
+                try:
+                    _, jobs = future.result()
+                    with results_lock:
+                        all_jobs.extend(jobs)
+                except Exception as e:
+                    print(f"  Source error: {e}")
+        except TimeoutError:
+            # One or more sources ran over 5 min — collect whatever finished
+            slow = [name for f, name in futures.items() if not f.done()]
+            print(f"  [search] Timeout — slow sources: {', '.join(slow)}. Using partial results.")
+            for future, name in futures.items():
+                if future.done():
+                    try:
+                        _, jobs = future.result()
+                        with results_lock:
+                            all_jobs.extend(jobs)
+                    except Exception:
+                        pass
 
     # Deduplicate by URL
     seen_urls: set[str] = set()
