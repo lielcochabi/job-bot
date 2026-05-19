@@ -62,7 +62,7 @@ def _is_tech_job(title: str, description: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def search_remoteok(queries: list[str]) -> Generator[dict, None, None]:
-    """https://remoteok.com/api ג€” returns JSON array of jobs."""
+    """https://remoteok.com/api - returns JSON array of jobs."""
     seen_ids: set[str] = set()
     for query in queries:
         tag = query.lower().replace(" ", "-")
@@ -273,7 +273,7 @@ def search_adzuna(queries: list[str], country: str = "us") -> Generator[dict, No
                     seen.add(jurl)
                     salary = ""
                     if item.get("salary_min") and item.get("salary_max"):
-                        salary = f"${int(item['salary_min']):,} ג€“ ${int(item['salary_max']):,}"
+                        salary = f"${int(item['salary_min']):,} - ${int(item['salary_max']):,}"
                     yield {
                         "source": "Adzuna",
                         "external_id": item.get("id", ""),
@@ -361,7 +361,7 @@ def search_hn_hiring(queries: list[str]) -> Generator[dict, None, None]:
 # ---------------------------------------------------------------------------
 
 def search_remotive(queries: list[str]) -> Generator[dict, None, None]:
-    """https://remotive.com/api/remote-jobs ג€” free, no auth required."""
+    """https://remotive.com/api/remote-jobs - free, no auth required."""
     seen: set[str] = set()
     for query in queries:
         try:
@@ -408,7 +408,7 @@ def search_remotive(queries: list[str]) -> Generator[dict, None, None]:
 # ---------------------------------------------------------------------------
 
 def search_jobicy(queries: list[str]) -> Generator[dict, None, None]:
-    """https://jobicy.com/api/v2/remote-jobs ג€” free, no auth required."""
+    """https://jobicy.com/api/v2/remote-jobs - free, no auth required."""
     seen: set[str] = set()
     for query in queries:
         try:
@@ -455,7 +455,7 @@ def search_jobicy(queries: list[str]) -> Generator[dict, None, None]:
 # ---------------------------------------------------------------------------
 
 def search_weworkremotely(queries: list[str]) -> Generator[dict, None, None]:
-    """https://weworkremotely.com ג€” parses RSS feeds for programming/devops categories."""
+    """https://weworkremotely.com - parses RSS feeds for programming/devops categories."""
     import xml.etree.ElementTree as ET
 
     feeds = [
@@ -520,7 +520,7 @@ def search_weworkremotely(queries: list[str]) -> Generator[dict, None, None]:
 # ---------------------------------------------------------------------------
 
 def search_workingnomads(queries: list[str]) -> Generator[dict, None, None]:
-    """https://www.workingnomads.com/api/exposed_jobs/ ג€” free JSON API."""
+    """https://www.workingnomads.com/api/exposed_jobs/ - free JSON API."""
     seen: set[str] = set()
     categories = ["back-end", "dev-ops", "software-development", "game-development",
                   "front-end", "full-stack", "data-science"]
@@ -574,7 +574,7 @@ def search_workingnomads(queries: list[str]) -> Generator[dict, None, None]:
 # ---------------------------------------------------------------------------
 
 def search_himalayas(queries: list[str]) -> Generator[dict, None, None]:
-    """https://himalayas.app/jobs/api ג€” free, no auth, remote jobs only."""
+    """https://himalayas.app/jobs/api - free, no auth, remote jobs only."""
     seen: set[str] = set()
     for query in queries:
         try:
@@ -601,7 +601,7 @@ def search_himalayas(queries: list[str]) -> Generator[dict, None, None]:
                 sal_min = item.get("salaryMin")
                 sal_max = item.get("salaryMax")
                 if sal_min and sal_max:
-                    salary = f"${sal_min:,} ג€“ ${sal_max:,}"
+                    salary = f"${sal_min:,} - ${sal_max:,}"
 
                 yield {
                     "source": "Himalayas",
@@ -627,11 +627,11 @@ def search_himalayas(queries: list[str]) -> Generator[dict, None, None]:
 
 
 # ---------------------------------------------------------------------------
-# Source 11: Drushim (Israeli job board ג€” regex HTML scrape, no extra deps)
+# Source 11: Drushim (Israeli job board - regex HTML scrape, no extra deps)
 # ---------------------------------------------------------------------------
 
 def search_drushim(queries: list[str]) -> Generator[dict, None, None]:
-    """Scrapes drushim.co.il tech category (cat26) using regex ג€” no lxml needed."""
+    """Scrapes drushim.co.il tech category (cat26) using regex - no lxml needed."""
     import urllib.parse
     seen: set[str] = set()
 
@@ -657,7 +657,7 @@ def search_drushim(queries: list[str]) -> Generator[dict, None, None]:
                         continue
                     seen.add(full_url)
 
-                    # Decode slug ג†’ readable title (mix of Hebrew/ASCII)
+                    # Decode slug ג†' readable title (mix of Hebrew/ASCII)
                     decoded = urllib.parse.unquote(slug).replace('-', ' ').replace('+', ' ')
                     ascii_title = re.sub(r'[^\x20-\x7E]+', ' ', decoded).strip()
                     title = ascii_title if len(ascii_title) > 3 else query
@@ -689,11 +689,11 @@ def search_drushim(queries: list[str]) -> Generator[dict, None, None]:
 
 
 # ---------------------------------------------------------------------------
-# Source 12: Indeed Israel (RSS feed ג€” free, no auth)
+# Source 12: Indeed Israel (RSS feed - free, no auth)
 # ---------------------------------------------------------------------------
 
 def search_indeed_israel(queries: list[str]) -> Generator[dict, None, None]:
-    """Indeed Israel RSS ג€” https://il.indeed.com ג€” no auth required."""
+    """Indeed Israel RSS - https://il.indeed.com - no auth required."""
     import urllib.parse
     import xml.etree.ElementTree as ET
     seen: set[str] = set()
@@ -745,34 +745,34 @@ def search_indeed_israel(queries: list[str]) -> Generator[dict, None, None]:
                     "description": desc,
                 }
         except RateLimited:
-            raise   # propagates up ג†’ prints once and skips all remaining queries
+            raise   # propagates up ג†' prints once and skips all remaining queries
         except Exception as e:
             print(f"  [Indeed IL] Error for '{query}': {e}")
         time.sleep(0.4)
 
 
 # ---------------------------------------------------------------------------
-# Source 13: AllJobs (Israel's largest job board ג€” internal JSON API)
+# Source 13: AllJobs (Israel's largest job board - internal JSON API)
 # ---------------------------------------------------------------------------
 
 def search_alljobs(queries: list[str]) -> Generator[dict, None, None]:
-    “””AllJobs.co.il — internal search API (no auth required).”””
+    """AllJobs.co.il - internal search API (no auth required)."""
     seen: set[str] = set()
 
     for query in queries:
         for page in range(1, 3):
             try:
                 resp = httpx.get(
-                    “https://www.alljobs.co.il/SiteApi/Searches/SearchJobsResults”,
-                    params={“search”: query, “page”: page,
-                            “location”: “”, “type”: “”, “field”: “”, “fromdate”: “”},
+                    "https://www.alljobs.co.il/SiteApi/Searches/SearchJobsResults",
+                    params={"search": query, "page": page,
+                            "location": "", "type": "", "field": "", "fromdate": ""},
                     headers={**HEADERS,
-                             “Referer”:          “https://www.alljobs.co.il/”,
-                             “X-Requested-With”: “XMLHttpRequest”},
+                             "Referer":          "https://www.alljobs.co.il/",
+                             "X-Requested-With": "XMLHttpRequest"},
                     timeout=15,
                 )
                 if resp.status_code == 404:
-                    # API endpoint not available — stop all queries silently
+                    # API endpoint not available - stop all queries silently
                     return
                 resp.raise_for_status()
                 data = resp.json()
@@ -820,7 +820,7 @@ def search_alljobs(queries: list[str]) -> Generator[dict, None, None]:
 
                 time.sleep(0.4)
             except Exception:
-                break  # fail silently — AllJobs API is unreliable
+                break  # fail silently - AllJobs API is unreliable
 
 
 # ---------------------------------------------------------------------------
@@ -875,9 +875,9 @@ def search_all_sources(
     """
     Search all enabled sources in parallel and return de-duplicated job listings.
 
-    israel_only ג€” use Israeli job boards + global remote boards, then filter
+    israel_only - use Israeli job boards + global remote boards, then filter
                   results to Israel-based or remote positions.
-    remote_only ג€” keep only jobs tagged remote/worldwide.
+    remote_only - keep only jobs tagged remote/worldwide.
     """
     all_sources = [
         "remoteok", "arbeitnow", "themuse", "adzuna", "hn",
@@ -934,13 +934,13 @@ def search_all_sources(
                 time_str = f"{hrs}h {mins}m" if hrs else f"{mins}m"
             except Exception:
                 time_str = "a while"
-            print(f"  [{label}] Rate-limited — skipping (available in {time_str})")
+            print(f"  [{label}] Rate-limited - skipping (available in {time_str})")
             return name, []
 
         print(f"  Searching {label}...")
         try:
             jobs = fn()
-            # Successful run — clear any stale limit
+            # Successful run - clear any stale limit
             try:
                 _db.clear_rate_limit(label)
             except Exception:
@@ -952,7 +952,7 @@ def search_all_sources(
                 _db.set_rate_limit(label, hours=rl.hours)
             except Exception:
                 pass
-            print(f"  [{label}] Rate limited — blocked for {rl.hours}h")
+            print(f"  [{label}] Rate limited - blocked for {rl.hours}h")
             return name, []
         except Exception as e:
             print(f"  [{label}] Error: {e}")
