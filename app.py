@@ -980,9 +980,8 @@ _PAGES = ["Dashboard", "Search", "Matched Jobs", "Apply", "Tracker", "Settings",
 def _go(page_fragment: str):
     for p in _PAGES:
         if page_fragment in p:
-            st.session_state["nav_page"]    = p
-            st.session_state["sidebar_nav"] = p   # sync radio widget before rerun
-            st.session_state["_nav_from_go"] = True
+            st.session_state["nav_page"]      = p
+            st.session_state["_nav_from_go"]  = True  # sidebar will sync radio on next run
             break
     st.rerun()
 
