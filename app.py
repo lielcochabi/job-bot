@@ -1293,9 +1293,14 @@ def _card(job: dict, key_prefix: str = "card", *,
                     _form_status = ""
                     _form_msg    = ""
 
-                    _email_err = ""   # captured here, shown after rerun
+                    # Shared SMTP sender credentials (from Streamlit secrets)
+                    _smtp_from = os.environ.get("NOTIFY_EMAIL", "")
+                    _smtp_pw   = os.environ.get("GMAIL_APP_PASSWORD", "")
+                    # Per-user destination — set in Settings → Profile → Email
+                    _user_email = load_config().get("profile", {}).get("email", "")
+                    _email_err  = ""   # captured here, shown after rerun
 
-                    if _contact and _from_addr and _gmail_pw:
+                    if _contact and _smtp_from and _smtp_pw:
                         try:
                             import smtplib
                             from email.mime.multipart import MIMEMultipart as _MIME
@@ -1304,9 +1309,8 @@ def _card(job: dict, key_prefix: str = "card", *,
                             from email              import encoders      as _enc
                             _pname = load_config().get("profile", {}).get("name", "")
                             _msg   = _MIME()
-                            _msg["From"]    = _from_addr
+                            _msg["From"]    = _smtp_from
                             _msg["To"]      = _contact
-                            _msg["Bcc"]     = _from_addr   # copy to self = proof of delivery
                             _msg["Subject"] = f"Application for {title}" + (f" — {_pname}" if _pname else "")
                             _msg.attach(_MIMEText(_answers.get("cover_letter", ""), "plain"))
                             if _rbytes:
@@ -1315,14 +1319,19 @@ def _card(job: dict, key_prefix: str = "card", *,
                                 _enc.encode_base64(_att)
                                 _att.add_header("Content-Disposition", f'attachment; filename="{_rname}"')
                                 _msg.attach(_att)
+                            # Recipients: employer + user's own email as BCC (if set)
+                            _recipients = [_contact]
+                            if _user_email and _user_email != _contact:
+                                _msg["Bcc"] = _user_email
+                                _recipients.append(_user_email)
                             with smtplib.SMTP("smtp.gmail.com", 587) as _srv:
                                 _srv.starttls()
-                                _srv.login(_from_addr, _gmail_pw)
-                                _srv.sendmail(_from_addr, [_contact, _from_addr], _msg.as_string())
+                                _srv.login(_smtp_from, _smtp_pw)
+                                _srv.sendmail(_smtp_from, _recipients, _msg.as_string())
                             _sent_email = True
                         except Exception as _mail_err:
                             _email_err = f"SMTP error: {_mail_err}"
-                    elif not _from_addr or not _gmail_pw:
+                    elif not _smtp_from or not _smtp_pw:
                         _email_err = "NOTIFY_EMAIL or GMAIL_APP_PASSWORD not set in Streamlit secrets"
 
                     # ── Path B: ATS / HTML form ────────────────────────────
@@ -1330,12 +1339,14 @@ def _card(job: dict, key_prefix: str = "card", *,
                         with st.spinner("Trying to auto-fill application form…"):
                             _form_status, _form_msg = _try_form_submit(url, _answers, _rbytes, _rname)
 
-                    # ── Confirmation email to self (always, whatever path taken) ──
+                    # ── Confirmation email → user's profile email ──────────
                     _conf_sent = False
                     _conf_err  = ""
-                    _conf_from = os.environ.get("NOTIFY_EMAIL", "")
-                    _conf_pw   = os.environ.get("GMAIL_APP_PASSWORD", "")
-                    if _conf_from and _conf_pw:
+                    if not _user_email:
+                        _conf_err = "Add your email in Settings → Profile to receive confirmations"
+                    elif not _smtp_from or not _smtp_pw:
+                        _conf_err = "NOTIFY_EMAIL or GMAIL_APP_PASSWORD not set in Streamlit secrets"
+                    else:
                         try:
                             import smtplib as _smtp2
                             from email.mime.multipart import MIMEMultipart as _MIME2
@@ -1343,12 +1354,12 @@ def _card(job: dict, key_prefix: str = "card", *,
                             from datetime            import datetime     as _dt
                             _method_label = (
                                 "Email + resume" if _sent_email else
-                                f"ATS form ({_form_status})" if _form_status in ("sent","partial") else
+                                f"ATS form ({_form_status})" if _form_status in ("sent", "partial") else
                                 "Cheat sheet only (manual apply needed)"
                             )
                             _c = _MIME2()
-                            _c["From"]    = _conf_from
-                            _c["To"]      = _conf_from
+                            _c["From"]    = _smtp_from
+                            _c["To"]      = _user_email
                             _c["Subject"] = f"[Job Bot] Applied: {title} at {company}"
                             _c.attach(_MT2(
                                 f"Job Bot confirmation\n{'='*48}\n\n"
@@ -1356,18 +1367,16 @@ def _card(job: dict, key_prefix: str = "card", *,
                                 f"Method:  {_method_label}\n"
                                 f"Sent to: {_contact or 'no contact email found'}\n"
                                 f"Time:    {_dt.utcnow().strftime('%Y-%m-%d %H:%M UTC')}\n\n"
-                                f"--- Cover letter ---\n\n{_answers.get('cover_letter','(none)')}\n",
+                                f"--- Cover letter ---\n\n{_answers.get('cover_letter', '(none)')}\n",
                                 "plain",
                             ))
                             with _smtp2.SMTP("smtp.gmail.com", 587) as _s2:
                                 _s2.starttls()
-                                _s2.login(_conf_from, _conf_pw)
-                                _s2.sendmail(_conf_from, _conf_from, _c.as_string())
+                                _s2.login(_smtp_from, _smtp_pw)
+                                _s2.sendmail(_smtp_from, _user_email, _c.as_string())
                             _conf_sent = True
                         except Exception as _ce:
                             _conf_err = str(_ce)
-                    else:
-                        _conf_err = "NOTIFY_EMAIL or GMAIL_APP_PASSWORD not set in Streamlit secrets"
 
                     # Persist state for display below (survives rerun)
                     st.session_state[f"_ai_ans_{jid}"]       = _answers
@@ -1417,8 +1426,8 @@ def _card(job: dict, key_prefix: str = "card", *,
 
                 # Confirmation email status — this is the clearest proof
                 if _conf_sent:
-                    _inbox = os.environ.get("NOTIFY_EMAIL", "your inbox")
-                    st.success(f":material/mark_email_read: Confirmation email sent to **{_inbox}** — if it arrived, the application went through")
+                    _dest = load_config().get("profile", {}).get("email", "your inbox")
+                    st.success(f":material/mark_email_read: Confirmation email sent to **{_dest}** — if it arrived, the application went through")
                 elif _conf_err:
                     st.warning(f":material/warning: Confirmation email failed: {_conf_err}")
 
@@ -2006,7 +2015,8 @@ elif "Settings" in page:
         col1, col2 = st.columns(2)
         with col1:
             name     = st.text_input("Full name",  value=profile.get("name", ""))
-            email    = st.text_input("Email",      value=profile.get("email", ""))
+            email    = st.text_input("Email (confirmations sent here)", value=profile.get("email", ""),
+                                   placeholder="you@example.com", help="Application confirmations and BCC copies are sent to this address.")
             phone    = st.text_input("Phone",      value=profile.get("phone", ""))
         with col2:
             city     = st.text_input("City",       value=profile.get("city", ""))
