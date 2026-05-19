@@ -912,24 +912,88 @@ def _card(job: dict, key_prefix: str = "card", *,
                 if _bcols[_bi].button("Skip", key=f"sk_{key_prefix}_{jid}", use_container_width=True):
                     database.set_match(jid, 0, json.dumps({"reason": "Manually skipped"})); st.rerun()
 
-        # AI cover letter (only in Apply mode)
+        # AI auto-apply (only in Apply mode)
         if apply_btns:
-            if st.button(":material/auto_awesome: Generate cover letter",
-                         key=f"gen_cl_{key_prefix}_{jid}", use_container_width=False):
+            _has_ai_key = bool(os.environ.get("OPENROUTER_API_KEY"))
+            _col_ai, _ = st.columns([2, 5])
+            if _col_ai.button(
+                ":material/auto_awesome: Apply with AI",
+                key=f"ai_apply_{key_prefix}_{jid}",
+                use_container_width=True,
+                disabled=not _has_ai_key,
+                help="Generates a cover letter and sends an email application if a contact address is found." if _has_ai_key else "Add OPENROUTER_API_KEY to Streamlit secrets to enable.",
+            ):
                 _resume = database.get_resume_content()
                 if not _resume:
-                    st.warning("Upload your resume in Settings first.")
-                elif not os.environ.get("OPENROUTER_API_KEY"):
-                    st.warning("Add OPENROUTER_API_KEY in Streamlit secrets to use AI cover letters.")
+                    st.warning(":material/info: Upload your resume in Settings first.")
                 else:
                     with st.spinner("Generating cover letter…"):
                         _cl = _ai_cover_letter(job, _resume)
-                    st.session_state[f"_cl_{jid}"] = _cl if _cl else "⚠ Could not generate — try again."
 
+                    if not _cl:
+                        st.error("Could not generate cover letter — check OPENROUTER_API_KEY.")
+                    else:
+                        # Try to find a contact email in the job description
+                        _desc_full = job.get("description", "")
+                        _emails = re.findall(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", _desc_full)
+                        _blocked = {"noreply", "no-reply", "donotreply", "privacy", "legal", "info@linkedin"}
+                        _to = next((e for e in _emails if not any(b in e.lower() for b in _blocked)), None)
+
+                        _from  = os.environ.get("NOTIFY_EMAIL", "")
+                        _pw    = os.environ.get("GMAIL_APP_PASSWORD", "")
+                        _cfg   = load_config()
+                        _prof  = _cfg.get("profile", {})
+                        _name  = _prof.get("name", "")
+                        _sent  = False
+
+                        if _to and _from and _pw:
+                            # Auto-send email application
+                            try:
+                                import smtplib
+                                from email.mime.multipart import MIMEMultipart as _MIME
+                                from email.mime.text import MIMEText as _MIMEText
+                                _msg = _MIME()
+                                _msg["From"]    = _from
+                                _msg["To"]      = _to
+                                _msg["Subject"] = f"Application for {title}" + (f" — {_name}" if _name else "")
+                                _msg.attach(_MIMEText(_cl, "plain"))
+                                with smtplib.SMTP("smtp.gmail.com", 587) as _srv:
+                                    _srv.starttls()
+                                    _srv.login(_from, _pw)
+                                    _srv.sendmail(_from, _to, _msg.as_string())
+                                _sent = True
+                                st.toast(f"Email sent to {_to}", icon=":material/check:")
+                            except Exception as _e:
+                                st.warning(f"Could not send email: {_e}")
+
+                        # Store letter and result
+                        st.session_state[f"_cl_{jid}"] = _cl
+                        st.session_state[f"_cl_sent_{jid}"] = _sent
+                        st.session_state[f"_cl_to_{jid}"]   = _to
+
+                        # Mark applied and log to tracker
+                        database.set_applied(jid, "AI Email" if _sent else "AI Cover Letter")
+                        try:
+                            import tracker as _tr
+                            _tr.add_job({**job, "match_score": score}, "AI Email" if _sent else "AI Cover Letter", username=_username)
+                        except Exception:
+                            pass
+                        st.rerun()
+
+            # Show generated letter if available
             if f"_cl_{jid}" in st.session_state:
-                st.text_area("Cover letter", value=st.session_state[f"_cl_{jid}"],
-                             height=220, key=f"_cl_area_{jid}",
-                             help="Edit as needed, then copy and paste when applying.")
+                _was_sent = st.session_state.get(f"_cl_sent_{jid}", False)
+                _sent_to  = st.session_state.get(f"_cl_to_{jid}", "")
+                if _was_sent:
+                    st.success(f":material/check: Email application sent to **{_sent_to}**")
+                else:
+                    st.info(":material/info: No contact email found — copy the letter below and apply manually.")
+                st.text_area(
+                    "Cover letter (editable)",
+                    value=st.session_state[f"_cl_{jid}"],
+                    height=220,
+                    key=f"_cl_area_{jid}",
+                )
 
 
 # ---------------------------------------------------------------------------
