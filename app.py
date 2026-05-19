@@ -1007,6 +1007,154 @@ def _ai_form_answers(job: dict, resume_text: str) -> dict:
     return base   # AI failed — at least return profile data
 
 
+@st.cache_resource(show_spinner=False)
+def _ensure_playwright() -> bool:
+    """Install Playwright Chromium once per deployment (cached so it only runs once)."""
+    import subprocess, sys
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "playwright", "install", "chromium", "--with-deps"],
+            capture_output=True, timeout=300,
+        )
+        return True
+    except Exception:
+        return False
+
+
+def _playwright_fill(url: str, answers: dict, resume_bytes: bytes, resume_name: str) -> tuple:
+    """
+    Use a real headless Chrome browser to fill and submit a JavaScript-rendered
+    application form. Works for Greenhouse, Lever, and most other ATS systems.
+    """
+    _ensure_playwright()
+    try:
+        from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+    except ImportError:
+        return "cheatsheet", "Playwright not available"
+
+    ats = _detect_ats(url)
+
+    # Write resume to a temp file so Playwright can upload it
+    _resume_tmp = None
+    if resume_bytes:
+        import tempfile
+        _tf = tempfile.NamedTemporaryFile(suffix=f"_{resume_name}", delete=False)
+        _tf.write(resume_bytes)
+        _tf.close()
+        _resume_tmp = _tf.name
+
+    def _fill(page, selector: str, value: str, timeout: int = 2000):
+        try:
+            page.fill(selector, value, timeout=timeout)
+        except Exception:
+            pass
+
+    def _upload(page, selector: str, path: str, timeout: int = 3000):
+        try:
+            page.set_input_files(selector, path, timeout=timeout)
+        except Exception:
+            pass
+
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            ctx     = browser.new_context(accept_downloads=True)
+            page    = ctx.new_page()
+            page.set_default_timeout(15000)
+
+            # ── Lever ────────────────────────────────────────────────────────
+            if ats == "lever":
+                apply_url = url.rstrip("/")
+                if not apply_url.endswith("/apply"):
+                    apply_url += "/apply"
+                page.goto(apply_url, wait_until="domcontentloaded", timeout=20000)
+                page.wait_for_timeout(2000)
+
+                _fill(page, '[name="name"]',     answers.get("full_name", ""))
+                _fill(page, '[name="email"]',    answers.get("email", ""))
+                _fill(page, '[name="phone"]',    answers.get("phone", ""))
+                _fill(page, '[name="org"]',      answers.get("current_company", ""))
+                _fill(page, '[name="linkedin"]', answers.get("linkedin_url", ""))
+                _fill(page, '[name="github"]',   answers.get("github_url", ""))
+                _fill(page, '[name="comments"]', answers.get("cover_letter", ""))
+                if _resume_tmp:
+                    _upload(page, 'input[type="file"]', _resume_tmp)
+
+                page.click('[type="submit"]', timeout=5000)
+                page.wait_for_timeout(3000)
+
+            # ── Greenhouse ───────────────────────────────────────────────────
+            elif ats == "greenhouse":
+                page.goto(url, wait_until="domcontentloaded", timeout=20000)
+                page.wait_for_timeout(2000)
+
+                _fill(page, '#first_name', answers.get("first_name", ""))
+                _fill(page, '#last_name',  answers.get("last_name", ""))
+                _fill(page, '#email',      answers.get("email", ""))
+                _fill(page, '#phone',      answers.get("phone", ""))
+                for sel in ['#cover_letter_text', 'textarea[name*="cover"]', '#cover_letter']:
+                    _fill(page, sel, answers.get("cover_letter", ""), timeout=1000)
+                if _resume_tmp:
+                    _upload(page, '#resume', _resume_tmp)
+                    _upload(page, 'input[type="file"]', _resume_tmp)
+
+                for btn in ['[data-qa="btn-submit"]', 'input[type="submit"]', 'button[type="submit"]']:
+                    try:
+                        page.click(btn, timeout=3000); break
+                    except Exception:
+                        pass
+                page.wait_for_timeout(3000)
+
+            # ── Generic: fill any visible form fields ────────────────────────
+            else:
+                page.goto(url, wait_until="domcontentloaded", timeout=20000)
+                page.wait_for_timeout(2000)
+
+                _SELECTOR_MAP = [
+                    (['[name*="first"]', '[id*="first"]', '[placeholder*="First"]'],   answers.get("first_name", "")),
+                    (['[name*="last"]',  '[id*="last"]',  '[placeholder*="Last"]'],    answers.get("last_name", "")),
+                    (['[name*="name"]',  '[id*="name"]',  '[placeholder*="name"]'],    answers.get("full_name", "")),
+                    (['[name*="email"]', '[id*="email"]', '[placeholder*="email"]'],   answers.get("email", "")),
+                    (['[name*="phone"]', '[id*="phone"]', '[placeholder*="phone"]'],   answers.get("phone", "")),
+                    (['[name*="linkedin"]', '[id*="linkedin"]'],                        answers.get("linkedin_url", "")),
+                    (['textarea[name*="cover"]', 'textarea[id*="cover"]',
+                      'textarea[name*="message"]', 'textarea[name*="letter"]'],        answers.get("cover_letter", "")),
+                ]
+                for selectors, value in _SELECTOR_MAP:
+                    if not value:
+                        continue
+                    for sel in selectors:
+                        try:
+                            page.fill(sel, value, timeout=800); break
+                        except Exception:
+                            pass
+
+                if _resume_tmp:
+                    _upload(page, 'input[type="file"]', _resume_tmp)
+
+                for btn in ['button[type="submit"]', 'input[type="submit"]', '[value="Submit"]']:
+                    try:
+                        page.click(btn, timeout=3000); break
+                    except Exception:
+                        pass
+                page.wait_for_timeout(3000)
+
+            content = page.content().lower()
+            browser.close()
+
+            if any(kw in content for kw in ("thank you", "submitted", "received your", "application sent", "success")):
+                return "sent", "Application submitted via browser automation"
+            return "partial", "Form filled and submitted — verify on the job site"
+
+    except Exception as e:
+        return "cheatsheet", f"Browser fill error: {e}"
+    finally:
+        if _resume_tmp:
+            import os as _os
+            try: _os.unlink(_resume_tmp)
+            except Exception: pass
+
+
 def _try_form_submit(url: str, answers: dict, resume_bytes: bytes, resume_name: str) -> tuple:
     """
     Try to auto-submit an online application form.
@@ -1015,9 +1163,9 @@ def _try_form_submit(url: str, answers: dict, resume_bytes: bytes, resume_name: 
     import httpx as _hx
     ats = _detect_ats(url)
 
-    # JS-heavy ATSes — can't submit via HTTP
+    # JS-heavy ATSes — skip HTTP, go straight to Playwright
     if ats in ("workday", "bamboohr", "ashby", "smartrecruiters"):
-        return "cheatsheet", f"{ats.title()} uses a JavaScript form — fill manually with the cheat sheet."
+        return _playwright_fill(url, answers, resume_bytes, resume_name)
 
     ua = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -1045,7 +1193,8 @@ def _try_form_submit(url: str, answers: dict, resume_bytes: bytes, resume_name: 
         else:
             all_forms = soup.find_all("form")
             if not all_forms:
-                return "cheatsheet", "No HTML form found on page (JS-rendered site)"
+                # HTTP found no form — page is JS-rendered; try Playwright
+                return _playwright_fill(url, answers, resume_bytes, resume_name)
             form = max(all_forms, key=lambda f: len(f.find_all(["input", "textarea", "select"])))
 
         if not form:
@@ -1131,9 +1280,10 @@ def _try_form_submit(url: str, answers: dict, resume_bytes: bytes, resume_name: 
         return "cheatsheet", f"Form returned HTTP {resp1.status_code}"
 
     except ImportError:
-        return "cheatsheet", "beautifulsoup4 not available — use the cheat sheet."
+        return _playwright_fill(url, answers, resume_bytes, resume_name)
     except Exception as e:
-        return "cheatsheet", f"Auto-fill error: {e}"
+        # HTTP approach failed — fall back to Playwright
+        return _playwright_fill(url, answers, resume_bytes, resume_name)
 
 
 def _show_apply_cheatsheet(answers: dict, job: dict) -> None:
