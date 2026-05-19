@@ -888,60 +888,60 @@ def _detect_ats(url: str) -> str:
 
 
 def _ai_form_answers(job: dict, resume_text: str) -> dict:
-    """Use AI to generate complete pre-filled answers for every application form field."""
-    api_key = os.environ.get("OPENROUTER_API_KEY", "")
-    if not api_key:
-        return {}
-    cfg     = load_config()
-    profile = cfg.get("profile", {})
-    name    = profile.get("name", "")
-    email   = profile.get("email", os.environ.get("NOTIFY_EMAIL", ""))
-    phone   = profile.get("phone", "")
+    """
+    Generate pre-filled answers for every application form field.
+    Always returns at least the user's profile data so the cheat sheet is
+    useful even when the AI call fails.
+    """
+    cfg      = load_config()
+    profile  = cfg.get("profile", {})
+    name     = profile.get("name", "")
+    email    = profile.get("email", os.environ.get("NOTIFY_EMAIL", ""))
+    phone    = profile.get("phone", "")
     linkedin = profile.get("linkedin", "")
     location = profile.get("location", "")
-    parts   = name.strip().split(None, 1) if name else ["", ""]
-    fn, ln  = parts[0], (parts[1] if len(parts) > 1 else "")
-    title_  = job.get("title", "")
+    parts    = name.strip().split(None, 1) if name else ["", ""]
+    fn, ln   = parts[0], (parts[1] if len(parts) > 1 else "")
+
+    # Always-available base — populated from saved profile
+    base: dict = {
+        "first_name":          fn,
+        "last_name":           ln,
+        "full_name":           name,
+        "email":               email,
+        "phone":               phone,
+        "linkedin_url":        linkedin,
+        "location":            location,
+        "country":             "Israel",
+        "salary_expectation":  "According to industry standards",
+        "start_date":          "Immediately",
+        "work_authorization":  "Yes",
+        "require_sponsorship": "No",
+        "willing_to_relocate": "Yes",
+        "how_did_you_hear":    "Job board",
+    }
+
+    api_key  = os.environ.get("OPENROUTER_API_KEY", "")
+    if not api_key:
+        return base   # return profile data — at least the cheat sheet will have name/email
+
+    title_   = job.get("title", "")
     company_ = job.get("company", "")
-    desc_   = (job.get("description") or "")[:900]
+    desc_    = (job.get("description") or "")[:800]
 
     prompt = (
-        "You are filling out a job application. Generate professional, specific answers.\n\n"
-        f"Resume:\n{resume_text[:2500]}\n\n"
-        f"Job: {title_!r} at {company_!r}\n"
-        f"Description: {desc_}\n\n"
-        "Known profile:\n"
-        f"  Name: {name or '(extract from resume)'}\n"
-        f"  Email: {email}\n"
-        f"  Phone: {phone or '(extract from resume)'}\n"
-        f"  LinkedIn: {linkedin or '(extract or leave empty)'}\n"
-        f"  Location: {location or '(extract from resume)'}\n\n"
-        "Return ONLY a JSON object — no markdown, no explanation:\n"
-        "{\n"
-        f'  "first_name": "{fn or "(extract)"}",\n'
-        f'  "last_name": "{ln or "(extract)"}",\n'
-        f'  "full_name": "{name or "(extract)"}",\n'
-        f'  "email": "{email}",\n'
-        '  "phone": "(extract from resume or empty)",\n'
-        '  "linkedin_url": "(extract from resume or empty)",\n'
-        '  "github_url": "(extract from resume or empty)",\n'
-        '  "portfolio_url": "(extract from resume or empty)",\n'
-        '  "location": "(extract from resume)",\n'
-        '  "city": "(extract city from resume)",\n'
-        '  "country": "Israel",\n'
-        '  "current_company": "(most recent company from resume)",\n'
-        '  "current_title": "(most recent title from resume)",\n'
-        '  "years_experience": "(total years from resume)",\n'
-        f'  "cover_letter": "(write a focused 3-paragraph cover letter for {title_} at {company_})",\n'
-        f'  "why_this_company": "(2 sentences specific to {company_})",\n'
-        '  "salary_expectation": "According to industry standards",\n'
-        '  "start_date": "Immediately",\n'
-        '  "work_authorization": "Yes",\n'
-        '  "require_sponsorship": "No",\n'
-        '  "willing_to_relocate": "Yes",\n'
-        '  "how_did_you_hear": "Job board",\n'
-        '  "summary": "(2-sentence professional summary from resume)"\n'
-        "}"
+        "Fill in a job application form on behalf of the candidate below. "
+        "Extract facts from the resume. Write the cover_letter specifically for this job.\n"
+        "Return ONLY valid JSON — no markdown fences, no explanation.\n\n"
+        f"RESUME:\n{resume_text[:2000]}\n\n"
+        f"JOB: {title_} at {company_}\nDESCRIPTION: {desc_}\n\n"
+        f"KNOWN: name={name!r} email={email!r} phone={phone!r} "
+        f"linkedin={linkedin!r} location={location!r}\n\n"
+        "Return a JSON object with keys: first_name, last_name, full_name, email, phone, "
+        "linkedin_url, github_url, portfolio_url, location, city, country, current_company, "
+        "current_title, years_experience, cover_letter, why_this_company, "
+        "salary_expectation, start_date, work_authorization, require_sponsorship, "
+        "willing_to_relocate, how_did_you_hear, summary"
     )
     try:
         import httpx as _hx
@@ -950,17 +950,54 @@ def _ai_form_answers(job: dict, resume_text: str) -> dict:
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json={"model": "meta-llama/llama-3.1-8b-instruct:free",
                   "messages": [{"role": "user", "content": prompt}],
-                  "temperature": 0.3, "max_tokens": 950},
-            timeout=40,
+                  "temperature": 0.3, "max_tokens": 1500},
+            timeout=50,
         )
         r.raise_for_status()
-        text = r.json()["choices"][0]["message"]["content"].strip()
-        m = re.search(r'\{.*\}', text, re.DOTALL)
-        if m:
-            return json.loads(m.group())
+        raw = r.json()["choices"][0]["message"]["content"].strip()
+
+        ai_data: dict = {}
+
+        # Strategy 1 — direct parse
+        try:
+            ai_data = json.loads(raw)
+        except Exception:
+            pass
+
+        # Strategy 2 — strip ```json ... ``` fences
+        if not ai_data:
+            m = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', raw, re.DOTALL)
+            if m:
+                try:
+                    ai_data = json.loads(m.group(1))
+                except Exception:
+                    pass
+
+        # Strategy 3 — grab outermost { ... }
+        if not ai_data:
+            m = re.search(r'\{.*\}', raw, re.DOTALL)
+            if m:
+                try:
+                    ai_data = json.loads(m.group())
+                except Exception:
+                    # Truncated response — attempt to close it
+                    try:
+                        ai_data = json.loads(m.group().rstrip(",") + '"}')
+                    except Exception:
+                        pass
+
+        if ai_data:
+            # Merge: AI data fills gaps; known profile values are never overwritten
+            merged = {**base, **{k: v for k, v in ai_data.items() if v}}
+            for k in ("email", "phone", "first_name", "last_name", "full_name", "linkedin_url", "location"):
+                if base.get(k):
+                    merged[k] = base[k]
+            return merged
+
     except Exception:
         pass
-    return {}
+
+    return base   # AI failed — at least return profile data
 
 
 def _try_form_submit(url: str, answers: dict, resume_bytes: bytes, resume_name: str) -> tuple:
@@ -1232,78 +1269,83 @@ def _card(job: dict, key_prefix: str = "card", *,
                     with st.spinner("Generating application answers…"):
                         _answers = _ai_form_answers(job, _resume_text)
 
-                    if not _answers:
-                        st.error("Could not generate answers — check OPENROUTER_API_KEY.")
-                    else:
-                        _rname, _rbytes = database.get_resume_file()
-                        if not _rname:
-                            _rname = "resume.pdf"
+                    # If the full-answers call didn't produce a cover letter,
+                    # fall back to the lighter cover-letter-only call
+                    if not _answers.get("cover_letter"):
+                        with st.spinner("Generating cover letter…"):
+                            _fb_cl = _ai_cover_letter(job, _resume_text)
+                        if _fb_cl:
+                            _answers["cover_letter"] = _fb_cl
 
-                        # ── Path A: email contact found in job description ──────
-                        _desc_full   = job.get("description", "")
-                        _emails_desc = re.findall(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", _desc_full)
-                        _skip_emails = {"noreply", "no-reply", "donotreply", "privacy", "legal", "info@linkedin"}
-                        _contact     = next((e for e in _emails_desc if not any(b in e.lower() for b in _skip_emails)), None)
+                    _rname, _rbytes = database.get_resume_file()
+                    if not _rname:
+                        _rname = "resume.pdf"
 
-                        _from_addr = os.environ.get("NOTIFY_EMAIL", "")
-                        _gmail_pw  = os.environ.get("GMAIL_APP_PASSWORD", "")
-                        _sent_email = False
-                        _form_status = ""
-                        _form_msg    = ""
+                    # ── Path A: email contact found in job description ──────
+                    _desc_full   = job.get("description", "")
+                    _emails_desc = re.findall(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", _desc_full)
+                    _skip_emails = {"noreply", "no-reply", "donotreply", "privacy", "legal", "info@linkedin"}
+                    _contact     = next((e for e in _emails_desc if not any(b in e.lower() for b in _skip_emails)), None)
 
-                        if _contact and _from_addr and _gmail_pw:
-                            try:
-                                import smtplib
-                                from email.mime.multipart import MIMEMultipart as _MIME
-                                from email.mime.text     import MIMEText     as _MIMEText
-                                from email.mime.base     import MIMEBase     as _MIMEBase
-                                from email              import encoders      as _enc
-                                _pname = load_config().get("profile", {}).get("name", "")
-                                _msg   = _MIME()
-                                _msg["From"]    = _from_addr
-                                _msg["To"]      = _contact
-                                _msg["Subject"] = f"Application for {title}" + (f" — {_pname}" if _pname else "")
-                                _msg.attach(_MIMEText(_answers.get("cover_letter", ""), "plain"))
-                                if _rbytes:
-                                    _att = _MIMEBase("application", "octet-stream")
-                                    _att.set_payload(_rbytes)
-                                    _enc.encode_base64(_att)
-                                    _att.add_header("Content-Disposition", f'attachment; filename="{_rname}"')
-                                    _msg.attach(_att)
-                                with smtplib.SMTP("smtp.gmail.com", 587) as _srv:
-                                    _srv.starttls()
-                                    _srv.login(_from_addr, _gmail_pw)
-                                    _srv.sendmail(_from_addr, _contact, _msg.as_string())
-                                _sent_email = True
-                                st.toast(f"Email + resume sent to {_contact}", icon=":material/check:")
-                            except Exception as _mail_err:
-                                st.warning(f"Email send failed: {_mail_err}")
+                    _from_addr  = os.environ.get("NOTIFY_EMAIL", "")
+                    _gmail_pw   = os.environ.get("GMAIL_APP_PASSWORD", "")
+                    _sent_email = False
+                    _form_status = ""
+                    _form_msg    = ""
 
-                        # ── Path B: ATS / HTML form ────────────────────────────
-                        if not _sent_email and url:
-                            with st.spinner("Trying to auto-fill application form…"):
-                                _form_status, _form_msg = _try_form_submit(url, _answers, _rbytes, _rname)
-                            if _form_status == "sent":
-                                st.toast("Application form submitted!", icon=":material/check:")
-                            elif _form_status == "partial":
-                                st.toast("Form submitted — please verify on the job site.", icon=":material/info:")
-
-                        # Persist state for display below
-                        st.session_state[f"_ai_ans_{jid}"]    = _answers
-                        st.session_state[f"_ai_email_{jid}"]  = _contact
-                        st.session_state[f"_ai_sent_{jid}"]   = _sent_email
-                        st.session_state[f"_ai_fstatus_{jid}"] = _form_status
-                        st.session_state[f"_ai_fmsg_{jid}"]   = _form_msg
-
-                        # Mark applied
-                        _method = "AI Email" if _sent_email else ("AI Form" if _form_status in ("sent", "partial") else "AI Cover Letter")
-                        database.set_applied(jid, _method)
+                    if _contact and _from_addr and _gmail_pw:
                         try:
-                            import tracker as _tr
-                            _tr.add_job({**job, "match_score": score}, _method, username=_username)
-                        except Exception:
-                            pass
-                        st.rerun()
+                            import smtplib
+                            from email.mime.multipart import MIMEMultipart as _MIME
+                            from email.mime.text     import MIMEText     as _MIMEText
+                            from email.mime.base     import MIMEBase     as _MIMEBase
+                            from email              import encoders      as _enc
+                            _pname = load_config().get("profile", {}).get("name", "")
+                            _msg   = _MIME()
+                            _msg["From"]    = _from_addr
+                            _msg["To"]      = _contact
+                            _msg["Subject"] = f"Application for {title}" + (f" — {_pname}" if _pname else "")
+                            _msg.attach(_MIMEText(_answers.get("cover_letter", ""), "plain"))
+                            if _rbytes:
+                                _att = _MIMEBase("application", "octet-stream")
+                                _att.set_payload(_rbytes)
+                                _enc.encode_base64(_att)
+                                _att.add_header("Content-Disposition", f'attachment; filename="{_rname}"')
+                                _msg.attach(_att)
+                            with smtplib.SMTP("smtp.gmail.com", 587) as _srv:
+                                _srv.starttls()
+                                _srv.login(_from_addr, _gmail_pw)
+                                _srv.sendmail(_from_addr, _contact, _msg.as_string())
+                            _sent_email = True
+                            st.toast(f"Email + resume sent to {_contact}", icon=":material/check:")
+                        except Exception as _mail_err:
+                            st.warning(f"Email send failed: {_mail_err}")
+
+                    # ── Path B: ATS / HTML form ────────────────────────────
+                    if not _sent_email and url:
+                        with st.spinner("Trying to auto-fill application form…"):
+                            _form_status, _form_msg = _try_form_submit(url, _answers, _rbytes, _rname)
+                        if _form_status == "sent":
+                            st.toast("Application form submitted!", icon=":material/check:")
+                        elif _form_status == "partial":
+                            st.toast("Form submitted — please verify on the job site.", icon=":material/info:")
+
+                    # Persist state for display below
+                    st.session_state[f"_ai_ans_{jid}"]     = _answers
+                    st.session_state[f"_ai_email_{jid}"]   = _contact
+                    st.session_state[f"_ai_sent_{jid}"]    = _sent_email
+                    st.session_state[f"_ai_fstatus_{jid}"] = _form_status
+                    st.session_state[f"_ai_fmsg_{jid}"]    = _form_msg
+
+                    # Mark applied
+                    _method = "AI Email" if _sent_email else ("AI Form" if _form_status in ("sent", "partial") else "AI Cover Letter")
+                    database.set_applied(jid, _method)
+                    try:
+                        import tracker as _tr
+                        _tr.add_job({**job, "match_score": score}, _method, username=_username)
+                    except Exception:
+                        pass
+                    st.rerun()
 
             # ── Show results panel ─────────────────────────────────────────────
             if f"_ai_ans_{jid}" in st.session_state:
