@@ -1164,13 +1164,13 @@ elif "Search" in page:
         label_visibility="collapsed",
     )
 
-    # Derive titles from selected categories; fall back to saved config titles
+    # Derive titles from selected categories + any custom titles saved in Settings
     _from_cats: list[str] = []
     for _c in (_sel_cats or []):
         _from_cats.extend(_cats_data.get(_c, []))
-    _from_cats = list(dict.fromkeys(_from_cats))
-
-    all_titles = _from_cats if _from_cats else cfg.get("job_titles", [])
+    _custom = cfg.get("custom_job_titles", [])
+    _from_cats.extend(t for t in _custom if t not in _from_cats)
+    all_titles = list(dict.fromkeys(_from_cats))
 
     # Reset title selection when categories change
     _cats_sig = "|".join(sorted(_sel_cats or []))
@@ -1473,31 +1473,13 @@ elif "Settings" in page:
             else:
                 st.error(f"Could not parse {uploaded.name}.")
 
-    with st.expander(":material/category: Job categories", expanded=True):
-        st.caption("Select categories to populate your search titles, then click Save settings.")
-        _cats = json.loads((BOT_DIR / "job_categories.json").read_text(encoding="utf-8"))
-        saved_cats = cfg.get("selected_categories", [])
-        selected_cats = []
-        cat_cols = st.columns(3)
-        for i, cat in enumerate(_cats.keys()):
-            if cat_cols[i % 3].checkbox(cat, value=cat in saved_cats, key=f"cat_{i}"):
-                selected_cats.append(cat)
-        # Titles from selected categories
-        cat_titles = []
-        for cat in selected_cats:
-            cat_titles.extend(_cats.get(cat, []))
-        cat_titles = list(dict.fromkeys(cat_titles))  # deduplicate, preserve order
-        if cat_titles:
-            st.caption(f":material/check_circle: {len(cat_titles)} titles from selected categories")
-
     with st.expander(":material/edit: Custom job titles", expanded=False):
-        st.caption("Extra titles to search for on top of the categories above. One per line.")
+        st.caption("Extra job titles to always include in searches, on top of whatever categories you pick. One per line.")
         custom_raw = st.text_area("Custom titles", value="\n".join(cfg.get("custom_job_titles", [])),
             height=140, label_visibility="collapsed", placeholder="e.g. Prompt Engineer\nAI Product Manager")
         custom_titles = [t.strip() for t in custom_raw.splitlines() if t.strip()]
-        titles_raw = "\n".join(cat_titles + [t for t in custom_titles if t not in cat_titles])
-        all_titles = cat_titles + [t for t in custom_titles if t not in cat_titles]
-        st.caption(f"{len(all_titles)} total titles active")
+        if custom_titles:
+            st.caption(f":material/check_circle: {len(custom_titles)} custom titles active")
 
     with st.expander(":material/public: Job sources", expanded=False):
         st.caption("Select which job boards to search. All 8 sources are enabled by default.")
@@ -1560,9 +1542,7 @@ elif "Settings" in page:
     st.divider()
 
     if st.button("Save settings", type="primary", key="save_settings_bottom") or _save_top:
-        cfg["selected_categories"]   = selected_cats
         cfg["custom_job_titles"]     = custom_titles
-        cfg["job_titles"]            = all_titles
         cfg["selected_sources"]      = selected_sources_settings
         cfg["blacklisted_companies"] = [t.strip() for t in blacklist_raw.splitlines() if t.strip()]
         cfg["location_mode"]    = location_mode
