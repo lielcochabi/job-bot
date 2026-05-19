@@ -206,24 +206,34 @@ st.markdown("""
         color: #c8daf8 !important;
     }
 
-    /* ── Task output panel ── */
+    /* ── Task output panel — inline feed style ── */
     .task-panel-header {
         display: flex; align-items: center; gap: 8px;
-        padding: 11px 16px;
+        padding: 7px 4px 7px 14px;
+        background: transparent;
         border-left: 2px solid transparent;
-        border-bottom: 1px solid #111827;
-        border-radius: 9px 9px 0 0;
-        background: #0c1220;
+        border-bottom: 1px solid #0f1825;
+        margin-top: 14px;
     }
     .task-panel-header.running { border-left-color: #f59e0b; }
     .task-panel-header.done    { border-left-color: #34d399; }
     .task-panel-header.error   { border-left-color: #f87171; }
     .task-panel-body {
-        padding: 6px 4px;
-        max-height: 340px; overflow-y: auto;
-        background: #090e1a;
-        border: 1px solid #111827; border-top: none;
-        border-radius: 0 0 9px 9px;
+        padding: 6px 0 10px 16px;
+        max-height: 300px; overflow-y: auto;
+        background: transparent;
+        border-left: 1px solid #111827;
+        margin-bottom: 6px;
+    }
+    /* fade-out at the bottom of a long log so it doesn't hard-clip */
+    .task-panel-body::after {
+        content: "";
+        display: block;
+        height: 18px;
+        background: linear-gradient(transparent, #080d18);
+        pointer-events: none;
+        margin-top: -18px;
+        position: sticky; bottom: 0;
     }
 
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.25} }
@@ -663,9 +673,9 @@ def _format_log_line(raw: str) -> str:
         color = '#4f6a8a'
 
     return (
-        f'<div style="padding:2px 10px;line-height:1.6">'
-        f'<span style="color:{color};font-size:0.8rem;'
-        f'font-family:ui-monospace,\'SF Mono\',Menlo,monospace">{esc}</span>'
+        f'<div style="padding:1px 0;line-height:1.55">'
+        f'<span style="color:{color};font-size:0.79rem;'
+        f'font-family:ui-monospace,\'SF Mono\',Menlo,monospace;letter-spacing:0.01em">{esc}</span>'
         f'</div>'
     )
 
