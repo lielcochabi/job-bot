@@ -480,7 +480,7 @@ def show_auth_page():
     with mid:
         st.markdown(
             '<div style="text-align:center;margin-bottom:1.5rem">'
-            '<div style="font-size:1.4rem;font-weight:700;color:#e6edf3;letter-spacing:-0.025em">:material/robot: Job Bot</div>'
+            '<div style="font-size:1.4rem;font-weight:700;color:#e6edf3;letter-spacing:-0.025em">🤖 Job Bot</div>'
             '<div style="font-size:0.82rem;color:#3d5070;margin-top:4px">Automated job search — Israel & remote</div>'
             '</div>',
             unsafe_allow_html=True,
