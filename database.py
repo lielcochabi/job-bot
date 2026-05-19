@@ -129,13 +129,39 @@ def set_match(job_id, score: float, reason: str, threshold: float = 70.0) -> Non
     )
 
 
-def set_applied(job_id, notes: str = "") -> None:
+def set_applied(job_id, method: str = "") -> None:
     from bson import ObjectId
     db = _get_db()
     db.jobs.update_one(
         {"_id": ObjectId(job_id)},
-        {"$set": {"status": "applied", "applied_at": datetime.utcnow().isoformat(), "notes": notes}},
+        {"$set": {
+            "status":         "applied",
+            "applied_at":     datetime.utcnow().isoformat(),
+            "method":         method,          # e.g. "AI Email", "AI Form"
+            "tracker_status": "Applied",       # follow-up status (editable in Tracker)
+            "tracker_notes":  "",              # user notes (editable in Tracker)
+        }},
     )
+
+
+def update_tracker_status(job_id: str, tracker_status: str, tracker_notes: str = "") -> None:
+    """Update the follow-up status and notes for a tracked (applied) job."""
+    from bson import ObjectId
+    db = _get_db()
+    db.jobs.update_one(
+        {"_id": ObjectId(job_id)},
+        {"$set": {"tracker_status": tracker_status, "tracker_notes": tracker_notes}},
+    )
+
+
+def get_applied_jobs() -> list:
+    """Return all applied jobs sorted by most-recently applied."""
+    db = _get_db()
+    rows = db.jobs.find(
+        {"username": _uname(), "status": "applied"},
+        sort=[("applied_at", DESCENDING)],
+    )
+    return [_doc(r) for r in rows]
 
 
 def set_failed(job_id, reason: str = "") -> None:

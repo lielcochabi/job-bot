@@ -1287,15 +1287,12 @@ def _card(job: dict, key_prefix: str = "card", *,
                     _skip_emails = {"noreply", "no-reply", "donotreply", "privacy", "legal", "info@linkedin"}
                     _contact     = next((e for e in _emails_desc if not any(b in e.lower() for b in _skip_emails)), None)
 
-                    _from_addr  = os.environ.get("NOTIFY_EMAIL", "")
-                    _gmail_pw   = os.environ.get("GMAIL_APP_PASSWORD", "")
-                    _sent_email = False
+                    # Shared SMTP sender credentials (from Streamlit secrets)
+                    _smtp_from   = os.environ.get("NOTIFY_EMAIL", "")
+                    _smtp_pw     = os.environ.get("GMAIL_APP_PASSWORD", "")
+                    _sent_email  = False
                     _form_status = ""
                     _form_msg    = ""
-
-                    # Shared SMTP sender credentials (from Streamlit secrets)
-                    _smtp_from = os.environ.get("NOTIFY_EMAIL", "")
-                    _smtp_pw   = os.environ.get("GMAIL_APP_PASSWORD", "")
                     # Per-user destination — set in Settings → Profile → Email
                     _user_email = load_config().get("profile", {}).get("email", "")
                     _email_err  = ""   # captured here, shown after rerun
@@ -1388,14 +1385,13 @@ def _card(job: dict, key_prefix: str = "card", *,
                     st.session_state[f"_ai_conf_sent_{jid}"] = _conf_sent
                     st.session_state[f"_ai_conf_err_{jid}"]  = _conf_err
 
-                    # Mark applied
-                    _method = "AI Email" if _sent_email else ("AI Form" if _form_status in ("sent", "partial") else "AI Cover Letter")
-                    database.set_applied(jid, _method)
-                    try:
-                        import tracker as _tr
-                        _tr.add_job({**job, "match_score": score}, _method, username=_username)
-                    except Exception:
-                        pass
+                    # Only mark as applied when something was actually sent
+                    _actually_sent = _sent_email or _form_status in ("sent", "partial")
+                    if _actually_sent:
+                        _method = "AI Email" if _sent_email else "AI Form"
+                        database.set_applied(jid, _method)
+                    # If only a cheat sheet was shown the job stays in "matched"
+                    # so it remains in the Apply queue until the user acts on it.
                     st.rerun()
 
             # ── Show results panel ─────────────────────────────────────────────
@@ -1417,9 +1413,11 @@ def _card(job: dict, key_prefix: str = "card", *,
                 elif _fst == "partial":
                     st.info(f":material/info: {_fmsg}")
                 elif _email_err:
-                    st.error(f":material/error: Email failed — {_email_err}")
+                    st.error(f":material/error: Could not send email — {_email_err}")
+                    st.info(":material/info: Use the cheat sheet below to apply manually, then click **Mark applied** when done.")
                 else:
-                    st.info(":material/info: No contact email found in job description — use the cheat sheet below to apply manually.")
+                    st.warning(":material/info: No contact email found and form could not be auto-submitted. "
+                               "Open the job link, paste the answers below into the form, then click **Mark applied**.")
 
                 if _fmsg and _fst not in ("sent", "partial"):
                     st.caption(f"Form attempt: {_fmsg}")
@@ -1840,83 +1838,119 @@ elif "Apply" in page:
 
 elif "Tracker" in page:
     _guest_block()
-    import tracker as _tracker
 
     st.title(":material/track_changes: Tracker")
-    st.caption("Update outcomes as you hear back from companies.")
+    st.caption("Track outcomes for every application.")
 
-    jobs = _tracker.get_all_jobs(username=_username)
+    _T_STATUSES  = ["Applied", "Interview", "Accepted", "Denied"]
+    _T_BADGE_CLR = {"Applied": "blue", "Interview": "orange", "Accepted": "green", "Denied": "red"}
 
-    if not jobs:
-        st.info("No applications tracked yet.")
+    applied_jobs = database.get_applied_jobs()
+
+    if not applied_jobs:
+        st.info("No applications yet — use the Apply page to send applications.")
     else:
         from collections import Counter
-        sc = Counter(j.get("Status", "") for j in jobs)
+        _sc = Counter(j.get("tracker_status", "Applied") for j in applied_jobs)
         with st.container(horizontal=True):
-            st.metric(":material/work: Total",      len(jobs),              border=True)
-            st.metric(":material/send: Applied",    sc.get("Applied", 0),   border=True)
-            st.metric(":material/chat: Interview",  sc.get("Interview", 0), border=True)
-            st.metric(":material/check: Accepted",  sc.get("Accepted", 0),  border=True)
-            st.metric(":material/close: Denied",    sc.get("Denied", 0),    border=True)
+            st.metric(":material/work: Total",      len(applied_jobs),        border=True)
+            st.metric(":material/send: Applied",    _sc.get("Applied", 0),    border=True)
+            st.metric(":material/chat: Interview",  _sc.get("Interview", 0),  border=True)
+            st.metric(":material/check: Accepted",  _sc.get("Accepted", 0),   border=True)
+            st.metric(":material/close: Denied",    _sc.get("Denied", 0),     border=True)
 
-        import re as _re
-        _safe_user = _re.sub(r"[^\w]", "_", _username.lower())
-        _user_tracker = _tracker.TRACKER_DIR / f"tracker_{_safe_user}.xlsx"
-        if _user_tracker.exists():
-            with open(_user_tracker, "rb") as f:
-                st.download_button("Download Excel", data=f.read(), file_name=_user_tracker.name,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        # ── Excel download (generated on-demand from MongoDB) ──────────────
+        def _make_excel(jobs: list) -> bytes:
+            import io
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+            _COLS = ["Date Applied", "Job Title", "Company", "Location",
+                     "Score", "URL", "Method", "Status", "Notes"]
+            _CLR  = {"Applied": "DBEAFE", "Interview": "FEF9C3",
+                     "Accepted": "D1FAE5", "Denied": "FEE2E2"}
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Applications"
+            hfont = Font(bold=True, color="FFFFFF", size=11)
+            hfill = PatternFill("solid", fgColor="1E3A5F")
+            thin  = Border(*[Side(style="thin")] * 0,
+                           left=Side(style="thin"), right=Side(style="thin"),
+                           top=Side(style="thin"),  bottom=Side(style="thin"))
+            for ci, h in enumerate(_COLS, 1):
+                c = ws.cell(row=1, column=ci, value=h)
+                c.font = hfont; c.fill = hfill
+                c.alignment = Alignment(horizontal="center", vertical="center")
+                c.border = thin
+            for ri, j in enumerate(jobs, 2):
+                sc_    = j.get("match_score") or 0
+                ts     = j.get("tracker_status", "Applied")
+                fill_  = PatternFill("solid", fgColor=_CLR.get(ts, "FFFFFF"))
+                vals   = [
+                    (j.get("applied_at") or "")[:10],
+                    j.get("title", ""), j.get("company", ""), j.get("location", ""),
+                    f"{sc_:.0f}%" if sc_ else "",
+                    j.get("url", ""), j.get("method", ""), ts,
+                    j.get("tracker_notes", ""),
+                ]
+                for ci, v in enumerate(vals, 1):
+                    c = ws.cell(row=ri, column=ci, value=v)
+                    c.fill = fill_; c.border = thin
+            buf = io.BytesIO(); wb.save(buf); return buf.getvalue()
+
+        st.download_button(
+            ":material/download: Download Excel",
+            data=_make_excel(applied_jobs),
+            file_name=f"applications_{_username}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
 
         st.divider()
 
-        status_filter = st.selectbox("Filter", ["All"] + _tracker.STATUS_OPTIONS, label_visibility="collapsed")
-        filtered = jobs if status_filter == "All" else [j for j in jobs if j.get("Status") == status_filter]
+        _tf = st.selectbox("Filter by status", ["All"] + _T_STATUSES, label_visibility="collapsed")
+        _display = applied_jobs if _tf == "All" else [j for j in applied_jobs if j.get("tracker_status", "Applied") == _tf]
+        st.caption(f"{len(_display)} application{'s' if len(_display) != 1 else ''}")
 
-        st.caption(f"{len(filtered)} job{'s' if len(filtered) != 1 else ''}")
-
-        status_color_map = {
-            "Applied": "#60a5fa", "Manual - Pending": "#f59e0b",
-            "Interview": "#34d399", "Accepted": "#34d399", "Denied": "#f87171",
-        }
-
-        _STATUS_BADGE_COLOR = {
-            "Applied": "blue", "Manual - Pending": "orange",
-            "Interview": "green", "Accepted": "green", "Denied": "red",
-        }
-
-        for i, job in enumerate(filtered):
-            url     = job.get("URL", "")
-            title   = job.get("Job Title", "Unknown")
-            company = job.get("Company", "Unknown")
-            status  = job.get("Status", "Applied")
-            date    = job.get("Date Applied", "")
-            score   = job.get("Match Score", "")
-            meta    = " · ".join(p for p in [company, date, score] if p)
+        for i, job in enumerate(_display):
+            _jid     = job.get("id", "")
+            _url     = job.get("url", "")
+            _title   = job.get("title", "Unknown")
+            _company = job.get("company", "")
+            _score   = job.get("match_score") or 0
+            _date    = (job.get("applied_at") or "")[:10]
+            _method  = job.get("method", "")
+            _tstatus = job.get("tracker_status", "Applied")
+            _tnotes  = job.get("tracker_notes", "") or ""
+            _meta    = " · ".join(p for p in [_company, _date, _method] if p)
 
             with st.container(border=True):
-                _ta, _tb = st.columns([5, 1])
-                with _ta:
-                    st.markdown(f"**{title}**")
-                    if meta:
-                        st.caption(meta)
-                with _tb:
-                    st.badge(status, color=_STATUS_BADGE_COLOR.get(status, "gray"))
+                _ca, _cb = st.columns([5, 1])
+                with _ca:
+                    st.markdown(f"**{_title}**")
+                    if _meta:
+                        st.caption(_meta)
+                with _cb:
+                    st.badge(_tstatus, color=_T_BADGE_CLR.get(_tstatus, "gray"))
 
-                col_status, col_notes, col_save, col_open = st.columns([2, 3, 1, 1])
-                with col_status:
-                    new_status = st.selectbox("Status", _tracker.STATUS_OPTIONS,
-                        index=_tracker.STATUS_OPTIONS.index(status) if status in _tracker.STATUS_OPTIONS else 0,
-                        key=f"status_{i}", label_visibility="collapsed")
-                with col_notes:
-                    notes = st.text_input("Notes", value=job.get("Notes", "") or "",
-                        key=f"notes_{i}", label_visibility="collapsed", placeholder="Notes...")
-                with col_save:
-                    if st.button(":material/save:", key=f"save_{i}", use_container_width=True, help="Save status & notes"):
-                        _tracker.update_status(url, new_status, notes, username=_username)
+                _cs, _cn, _csave, _copen = st.columns([2, 3, 1, 1])
+                with _cs:
+                    _new_status = st.selectbox(
+                        "Status", _T_STATUSES,
+                        index=_T_STATUSES.index(_tstatus) if _tstatus in _T_STATUSES else 0,
+                        key=f"tst_{i}", label_visibility="collapsed",
+                    )
+                with _cn:
+                    _new_notes = st.text_input(
+                        "Notes", value=_tnotes,
+                        key=f"tnotes_{i}", label_visibility="collapsed", placeholder="Add notes…",
+                    )
+                with _csave:
+                    if st.button(":material/save:", key=f"tsave_{i}", use_container_width=True, help="Save"):
+                        database.update_tracker_status(_jid, _new_status, _new_notes)
                         st.toast("Saved.", icon=":material/check:")
-                with col_open:
-                    if url:
-                        st.link_button(":material/open_in_new:", url, use_container_width=True, help="Open job posting")
+                        st.rerun()
+                with _copen:
+                    if _url:
+                        st.link_button(":material/open_in_new:", _url, use_container_width=True)
 
 
 # ---------------------------------------------------------------------------
