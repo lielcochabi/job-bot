@@ -956,7 +956,7 @@ def search_all_sources(
             print(f"  [{label}] Error: {e}")
             return name, []
 
-        with ThreadPoolExecutor(max_workers=6) as executor:
+    with ThreadPoolExecutor(max_workers=6) as executor:
         futures = {executor.submit(run_source, name): name for name in queue}
         for future in as_completed(futures, timeout=180):
             try:
