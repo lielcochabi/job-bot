@@ -225,6 +225,25 @@ st.markdown("""
         border-left: 1px solid #111827;
         margin-bottom: 6px;
     }
+    /* pull the button row flush with the header, no gap */
+    .task-panel-header + div [data-testid="stHorizontalBlock"] {
+        margin-top: -2.1rem !important;
+        justify-content: flex-end;
+    }
+    .task-panel-header + div [data-testid="stColumn"] {
+        flex: 0 0 auto !important;
+        padding: 0 2px !important;
+    }
+    /* tertiary button text colour in task panel */
+    .task-panel-header + div button[kind="tertiary"] {
+        color: #2d3d55 !important;
+        font-size: 0.75rem !important;
+        padding: 2px 4px !important;
+    }
+    .task-panel-header + div button[kind="tertiary"]:hover {
+        color: #8b98b0 !important;
+    }
+
     /* fade-out at the bottom of a long log so it doesn't hard-clip */
     .task-panel-body::after {
         content: "";
@@ -712,54 +731,42 @@ def render_task_panel(task_key: str, title: str) -> bool:
 
     # ── Header row ──────────────────────────────────────────────────────────
     if running:
-        header_col, stop_col, close_col = st.columns([11, 0.6, 0.6])
+        _label  = f'<span class="running-dot"></span><span style="color:#e6edf3;font-size:0.85rem;font-weight:500">{title}</span><span style="color:#3d4f6b;font-size:0.78rem"> — running</span>'
+        _cls    = "running"
+    elif rc == 0:
+        _label  = f'<span style="color:#34d399;font-size:0.85rem;font-weight:500">{title} — done ✓</span>'
+        _cls    = "done"
+    elif rc == -1:
+        _label  = f'<span style="color:#f59e0b;font-size:0.85rem;font-weight:500">{title} — stopped</span>'
+        _cls    = "error"
     else:
-        header_col, close_col = st.columns([13, 0.6])
+        _label  = f'<span style="color:#f87171;font-size:0.85rem;font-weight:500">{title} — failed (exit {rc})</span>'
+        _cls    = "error"
 
-    with header_col:
-        if running:
-            st.markdown(
-                f'<div class="task-panel-header running">'
-                f'<span class="running-dot"></span>'
-                f'<span style="color:#e6edf3;font-size:0.85rem;font-weight:500">{title}</span>'
-                f'<span style="color:#3d4f6b;font-size:0.78rem"> — running</span>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-        elif rc == -1:
-            st.markdown(
-                f'<div class="task-panel-header error">'
-                f'<span style="color:#f59e0b;font-size:0.85rem;font-weight:500">{title} — stopped</span>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-        elif rc == 0:
-            st.markdown(
-                f'<div class="task-panel-header done">'
-                f'<span style="color:#34d399;font-size:0.85rem;font-weight:500">{title} — done</span>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                f'<div class="task-panel-header error">'
-                f'<span style="color:#f87171;font-size:0.85rem;font-weight:500">{title} — failed (exit {rc})</span>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
+    st.markdown(
+        f'<div class="task-panel-header {_cls}">{_label}</div>',
+        unsafe_allow_html=True,
+    )
 
+    # Action buttons — tertiary = no border, no background, just text
+    _btn_cols = st.columns([12, 1, 1]) if running else st.columns([13, 1])
     if running:
-        with stop_col:
-            if st.button("■", key=f"stop_{task_key}", use_container_width=True,
-                         help="Stop process"):
+        with _btn_cols[1]:
+            if st.button("■", key=f"stop_{task_key}", type="tertiary",
+                         use_container_width=True, help="Stop"):
                 stop_task(task_key, status_path)
                 st.rerun()
-
-    with close_col:
-        if st.button("✕", key=f"close_{task_key}", use_container_width=True,
-                     help="Dismiss"):
-            st.session_state[task_key]["visible"] = False
-            st.rerun()
+        with _btn_cols[2]:
+            if st.button("✕", key=f"close_{task_key}", type="tertiary",
+                         use_container_width=True, help="Dismiss"):
+                st.session_state[task_key]["visible"] = False
+                st.rerun()
+    else:
+        with _btn_cols[1]:
+            if st.button("✕", key=f"close_{task_key}", type="tertiary",
+                         use_container_width=True, help="Dismiss"):
+                st.session_state[task_key]["visible"] = False
+                st.rerun()
 
     # ── Output box ──────────────────────────────────────────────────────────
     if not lines:
