@@ -641,7 +641,7 @@ def stop_task(task_key: str, status_path: Path):
 _ANSI_RE = re.compile(r'\x1b\[[0-9;]*[mGKHFABCDJn]|\r')
 
 def _format_log_line(raw: str) -> str:
-    """Strip ANSI, classify the line, return a styled HTML row."""
+    """Strip ANSI, classify the line, return a clean styled text row."""
     line = _ANSI_RE.sub("", raw).strip()
     if not line:
         return ""
@@ -649,39 +649,23 @@ def _format_log_line(raw: str) -> str:
     esc = line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     lo  = line.lower()
 
-    # Classify
     if any(k in lo for k in ("error", "fail", "exception", "traceback", "exit 1")):
-        dot   = '#f87171'
         color = '#f87171'
-        bg    = 'rgba(248,113,113,0.06)'
     elif any(k in lo for k in ("[ok]", "done", "complete", "success", "added", "matched", "applied")):
-        dot   = '#34d399'
-        color = '#c8efe2'
-        bg    = 'rgba(52,211,153,0.05)'
-    elif any(k in lo for k in ("searching", "loading", "phase", "────", "──")):
-        dot   = '#4f8ef7'
-        color = '#7fb3f7'
-        bg    = 'rgba(79,142,247,0.05)'
-    elif any(k in lo for k in ("found", "jobs found", "score", "reset", "skipped")):
-        dot   = '#a78bfa'
-        color = '#c4b5fd'
-        bg    = 'rgba(167,139,250,0.05)'
-    elif any(k in lo for k in ("warn", "skipping", "busy", "rate limit", "retry")):
-        dot   = '#f59e0b'
-        color = '#fcd34d'
-        bg    = 'rgba(245,158,11,0.05)'
+        color = '#34d399'
+    elif any(k in lo for k in ("warn", "skipping", "rate limit", "rate-limit", "blocked")):
+        color = '#f59e0b'
+    elif any(k in lo for k in ("found", "jobs found")):
+        color = '#a78bfa'
+    elif any(k in lo for k in ("searching", "phase")):
+        color = '#4f8ef7'
     else:
-        dot   = '#2d3d55'
         color = '#4f6a8a'
-        bg    = 'transparent'
 
     return (
-        f'<div style="display:flex;align-items:baseline;gap:10px;padding:5px 0;'
-        f'background:{bg};border-radius:5px;margin:1px 0;padding-left:10px">'
-        f'<span style="width:5px;height:5px;border-radius:50%;background:{dot};'
-        f'flex-shrink:0;margin-top:5px;display:inline-block"></span>'
-        f'<span style="color:{color};font-size:0.78rem;line-height:1.5;'
-        f'font-family:ui-monospace,\'SF Mono\',Menlo,monospace;word-break:break-all">{esc}</span>'
+        f'<div style="padding:2px 10px;line-height:1.6">'
+        f'<span style="color:{color};font-size:0.8rem;'
+        f'font-family:ui-monospace,\'SF Mono\',Menlo,monospace">{esc}</span>'
         f'</div>'
     )
 

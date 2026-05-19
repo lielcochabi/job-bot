@@ -756,21 +756,24 @@ def search_indeed_israel(queries: list[str]) -> Generator[dict, None, None]:
 # ---------------------------------------------------------------------------
 
 def search_alljobs(queries: list[str]) -> Generator[dict, None, None]:
-    """AllJobs.co.il ג€” internal search API (no auth required)."""
+    “””AllJobs.co.il — internal search API (no auth required).”””
     seen: set[str] = set()
 
     for query in queries:
         for page in range(1, 3):
             try:
                 resp = httpx.get(
-                    "https://www.alljobs.co.il/SiteApi/Searches/SearchJobsResults",
-                    params={"search": query, "page": page,
-                            "location": "", "type": "", "field": "", "fromdate": ""},
+                    “https://www.alljobs.co.il/SiteApi/Searches/SearchJobsResults”,
+                    params={“search”: query, “page”: page,
+                            “location”: “”, “type”: “”, “field”: “”, “fromdate”: “”},
                     headers={**HEADERS,
-                             "Referer":          "https://www.alljobs.co.il/",
-                             "X-Requested-With": "XMLHttpRequest"},
+                             “Referer”:          “https://www.alljobs.co.il/”,
+                             “X-Requested-With”: “XMLHttpRequest”},
                     timeout=15,
                 )
+                if resp.status_code == 404:
+                    # API endpoint not available — stop all queries silently
+                    return
                 resp.raise_for_status()
                 data = resp.json()
 
@@ -816,9 +819,8 @@ def search_alljobs(queries: list[str]) -> Generator[dict, None, None]:
                     }
 
                 time.sleep(0.4)
-            except Exception as e:
-                print(f"  [AllJobs] Error for '{query}' page {page}: {e}")
-                break
+            except Exception:
+                break  # fail silently — AllJobs API is unreliable
 
 
 # ---------------------------------------------------------------------------
