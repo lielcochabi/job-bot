@@ -1007,16 +1007,22 @@ def _ai_form_answers(job: dict, resume_text: str) -> dict:
     return base   # AI failed — at least return profile data
 
 
-@st.cache_resource(show_spinner=False)
 def _ensure_playwright() -> bool:
-    """Install Playwright Chromium once per deployment (cached so it only runs once)."""
+    """Install Playwright Chromium if the binary is missing."""
     import subprocess, sys
+    from pathlib import Path as _Path
+    # Check whether chromium binary already exists anywhere under the cache dir
+    import glob as _glob
+    _cache = _Path.home() / ".cache" / "ms-playwright"
+    _bins = _glob.glob(str(_cache / "**" / "chrome*"), recursive=True)
+    if _bins:
+        return True   # already installed
     try:
-        subprocess.run(
+        result = subprocess.run(
             [sys.executable, "-m", "playwright", "install", "chromium", "--with-deps"],
-            capture_output=True, timeout=300,
+            capture_output=False, timeout=300,
         )
-        return True
+        return result.returncode == 0
     except Exception:
         return False
 
@@ -1057,7 +1063,19 @@ def _playwright_fill(url: str, answers: dict, resume_bytes: bytes, resume_name: 
 
     try:
         with sync_playwright() as pw:
-            browser = pw.chromium.launch(headless=True)
+            try:
+                browser = pw.chromium.launch(headless=True)
+            except Exception as _launch_err:
+                if "Executable doesn't exist" in str(_launch_err):
+                    # Binary missing — install now and retry once
+                    import subprocess, sys
+                    subprocess.run(
+                        [sys.executable, "-m", "playwright", "install", "chromium", "--with-deps"],
+                        timeout=300,
+                    )
+                    browser = pw.chromium.launch(headless=True)
+                else:
+                    raise
             ctx     = browser.new_context(accept_downloads=True)
             page    = ctx.new_page()
             page.set_default_timeout(15000)
