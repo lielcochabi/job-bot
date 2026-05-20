@@ -10,8 +10,6 @@ import os
 import re
 from typing import Optional
 
-import httpx
-
 import database
 
 # ---------------------------------------------------------------------------
@@ -121,6 +119,10 @@ _JUNIOR_TITLE_WORDS = {
     "apprentice", "jr.", "jr ", "associate", "early career",
     "new grad", "fresh grad",
 }
+
+# Public aliases — import these in main.py to avoid duplicating keyword sets
+SENIOR_TITLE_WORDS = _SENIOR_TITLE_WORDS
+JUNIOR_TITLE_WORDS = _JUNIOR_TITLE_WORDS
 
 # ---------------------------------------------------------------------------
 # Role whitelist — job title MUST match one of these categories to pass
@@ -428,7 +430,7 @@ def _relevance_bonus(title: str, desc: str) -> int:
 # OpenRouter AI scoring
 # ---------------------------------------------------------------------------
 
-def ai_score_job(job: dict, resume_text: str) -> tuple[float, str]:
+def ai_score_job(job: dict, resume_text: str) -> tuple[float, str]:  # noqa: import-outside-toplevel
     """
     Score a job using OpenRouter AI (meta-llama/llama-3.1-8b-instruct:free).
     Returns (score 0-100, json_string) or (0.0, "") on any error / missing key.
@@ -452,6 +454,7 @@ def ai_score_job(job: dict, resume_text: str) -> tuple[float, str]:
             '{"score": <integer 0-100>, "reason": "<one sentence>", "matched_skills": [<list of matched skill strings>]}'
         )
 
+        import httpx
         response = httpx.post(
             "https://openrouter.ai/api/v1/chat/completions",
             headers={

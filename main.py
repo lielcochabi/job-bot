@@ -137,12 +137,9 @@ def search(
                 return True
         return False
 
-    # Seniority pre-filter — skip mismatched roles before they enter the DB
+    # Seniority pre-filter — reuse keyword sets from job_matcher (single source of truth)
+    from job_matcher import SENIOR_TITLE_WORDS as _SENIOR_KW, JUNIOR_TITLE_WORDS as _JUNIOR_KW
     _seniority_pref = cfg.get("seniority", "Any")
-    _SENIOR_KW = {"senior", "sr.", " sr ", "lead", "principal", "staff",
-                  "head of", "director", "architect", "manager", "vp "}
-    _JUNIOR_KW = {"junior", "entry", "jr.", " jr ", "associate",
-                  "graduate", "intern", "trainee"}
 
     def _seniority_ok(title: str) -> bool:
         if _seniority_pref == "Any":

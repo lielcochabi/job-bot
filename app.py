@@ -850,7 +850,8 @@ def _ai_cover_letter(job: dict, resume_text: str) -> str:
         )
         r.raise_for_status()
         return r.json()["choices"][0]["message"]["content"].strip()
-    except Exception:
+    except Exception as _e:
+        print(f"[ai_cover_letter] {_e}")
         return ""
 
 
@@ -1478,6 +1479,15 @@ def _card(job: dict, key_prefix: str = "card", *,
 
                 _show_apply_cheatsheet(_ans, job)
 
+# Prune stale per-job session keys so they don't accumulate forever.
+# Keep only keys for jobs currently visible on this page.
+_visible_jids = {j.get("id","") for j in database.get_jobs_by_status("matched")}
+_stale = [k for k in list(st.session_state)
+          if k.startswith(("_ai_ans_","_ai_fstatus_","_ai_fmsg_"))
+          and k.split("_")[-1] not in _visible_jids]
+for _k in _stale:
+    st.session_state.pop(_k, None)
+
 
 # ---------------------------------------------------------------------------
 # Sidebar
@@ -1492,9 +1502,9 @@ def _init_db_once():
 def _get_stats(username: str) -> dict:
     return database.get_stats()
 
-@st.cache_data(ttl=10, show_spinner=False)
+@st.cache_data(ttl=30, show_spinner=False)
 def _has_resume_cached(username: str) -> bool:
-    return bool(database.get_resume_content())
+    return database.has_resume()   # cheap count_documents, not full text load
 
 @st.cache_data(ttl=3600, show_spinner=False)   # run at most once per hour
 def _cleanup_once(username: str, expiry_days: int = 30) -> int:

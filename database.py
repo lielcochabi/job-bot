@@ -204,8 +204,6 @@ def cleanup_old_jobs(days: int = 7) -> int:
     return result.deleted_count
 
 
-def expire_old_jobs(days: int = 30) -> int:
-    return cleanup_old_jobs(days)
 
 
 def get_unmatched_jobs() -> list:
@@ -215,27 +213,31 @@ def get_unmatched_jobs() -> list:
 
 
 def get_stats() -> dict:
-    db = _get_db()
+    """Single aggregation pipeline — one DB round-trip instead of 6."""
+    db       = _get_db()
     username = _uname()
-    total   = db.jobs.count_documents({"username": username})
-    found   = db.jobs.count_documents({"username": username, "status": "found"})
-    matched = db.jobs.count_documents({"username": username, "status": "matched"})
-    skipped = db.jobs.count_documents({"username": username, "status": "skipped"})
-    applied = db.jobs.count_documents({"username": username, "status": "applied"})
-    failed  = db.jobs.count_documents({"username": username, "status": "failed"})
     pipeline = [
-        {"$match": {"username": username, "match_score": {"$ne": None}}},
-        {"$group": {"_id": None, "avg": {"$avg": "$match_score"}}},
+        {"$match": {"username": username}},
+        {"$facet": {
+            "by_status": [{"$group": {"_id": "$status", "n": {"$sum": 1}}}],
+            "avg_score": [
+                {"$match": {"match_score": {"$ne": None}}},
+                {"$group": {"_id": None, "avg": {"$avg": "$match_score"}}},
+            ],
+        }},
     ]
-    avg_result = list(db.jobs.aggregate(pipeline))
-    avg_score = avg_result[0]["avg"] if avg_result else 0
+    result   = list(db.jobs.aggregate(pipeline))
+    facet    = result[0] if result else {"by_status": [], "avg_score": []}
+    counts   = {doc["_id"]: doc["n"] for doc in facet.get("by_status", [])}
+    avg_raw  = facet.get("avg_score", [])
+    avg_score = avg_raw[0]["avg"] if avg_raw else 0
     return {
-        "total":     total,
-        "found":     found,
-        "matched":   matched,
-        "skipped":   skipped,
-        "applied":   applied,
-        "failed":    failed,
+        "total":     sum(counts.values()),
+        "found":     counts.get("found",   0),
+        "matched":   counts.get("matched", 0),
+        "skipped":   counts.get("skipped", 0),
+        "applied":   counts.get("applied", 0),
+        "failed":    counts.get("failed",  0),
         "avg_score": round(avg_score or 0, 1),
     }
 
@@ -286,6 +288,11 @@ def get_resume_file() -> tuple:
         except Exception:
             pass
     return "", b""
+
+
+def has_resume() -> bool:
+    """Cheap existence check — doesn't load resume text."""
+    return _get_db().resumes.count_documents({"username": _uname()}) > 0
 
 
 def get_resume_content() -> str:
