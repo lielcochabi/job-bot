@@ -348,25 +348,25 @@ st.markdown("""
 auth.init_auth_db()
 
 try:
-    import extra_streamlit_components as stx
-    from datetime import datetime as _dt, timedelta as _td
-    _cookie_mgr = stx.CookieManager(key="jobbot_cookies")
+    from streamlit_cookies_controller import CookieController as _CC
+    _cookie_ctrl = _CC()
     _cookie_available = True
 except Exception:
-    _cookie_mgr = None
+    _cookie_ctrl = None
     _cookie_available = False
+
+_COOKIE_NAME = "job_bot_auth"
+_COOKIE_DAYS = 90   # remember for 90 days
 
 
 def _do_login(username: str, remember: bool):
-    token = auth.create_token(username, days=30 if remember else 1)
+    days  = _COOKIE_DAYS if remember else 1
+    token = auth.create_token(username, days=days)
     st.session_state["username"]   = username
     st.session_state["auth_token"] = token
     if remember and _cookie_available:
         try:
-            _cookie_mgr.set(
-                "job_bot_auth", token,
-                expires_at=_dt.now() + _td(days=30),
-            )
+            _cookie_ctrl.set(_COOKIE_NAME, token, max_age=days * 86400)
         except Exception:
             pass
 
@@ -375,7 +375,7 @@ def _do_logout():
     auth.revoke_token(st.session_state.get("auth_token", ""))
     if _cookie_available:
         try:
-            _cookie_mgr.delete("job_bot_auth")
+            _cookie_ctrl.remove(_COOKIE_NAME)
         except Exception:
             pass
     for k in ["username", "auth_token", "page_loaded"]:
@@ -454,15 +454,18 @@ def _handle_google_callback() -> bool:
     return True
 
 
-# Auto-login from cookie
+# Auto-login from persistent cookie
 if "username" not in st.session_state and _cookie_available:
     try:
-        token = _cookie_mgr.get("job_bot_auth")
-        if token:
-            uname = auth.validate_token(token)
-            if uname:
-                st.session_state["username"]   = uname
-                st.session_state["auth_token"] = token
+        _saved_token = _cookie_ctrl.get(_COOKIE_NAME)
+        if _saved_token:
+            _saved_uname = auth.validate_token(_saved_token)
+            if _saved_uname:
+                st.session_state["username"]   = _saved_uname
+                st.session_state["auth_token"] = _saved_token
+            else:
+                # Token expired — clear the stale cookie
+                _cookie_ctrl.remove(_COOKIE_NAME)
     except Exception:
         pass
 
@@ -517,7 +520,7 @@ def show_auth_page():
         with tab_login:
             lu  = st.text_input("Username", key="li_user", placeholder="your username")
             lp  = st.text_input("Password", type="password", key="li_pass", placeholder="••••••••")
-            rem = st.checkbox("Remember me for 30 days", value=True, key="li_rem")
+            rem = st.checkbox("Keep me logged in", value=True, key="li_rem")
             if st.button("Log In", type="primary", use_container_width=True, key="li_btn"):
                 if lu and lp:
                     ok, result = auth.login(lu, lp)
