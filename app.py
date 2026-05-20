@@ -1008,21 +1008,18 @@ def _ai_form_answers(job: dict, resume_text: str) -> dict:
 
 
 def _ensure_playwright() -> bool:
-    """Install Playwright Chromium if the binary is missing."""
+    """
+    Run `playwright install chromium` unconditionally.
+    Playwright is smart — it skips the download if the binary is already present,
+    so calling this every time is safe and fast after the first install.
+    """
     import subprocess, sys
-    from pathlib import Path as _Path
-    # Check whether chromium binary already exists anywhere under the cache dir
-    import glob as _glob
-    _cache = _Path.home() / ".cache" / "ms-playwright"
-    _bins = _glob.glob(str(_cache / "**" / "chrome*"), recursive=True)
-    if _bins:
-        return True   # already installed
     try:
-        result = subprocess.run(
-            [sys.executable, "-m", "playwright", "install", "chromium", "--with-deps"],
-            capture_output=False, timeout=300,
+        subprocess.run(
+            [sys.executable, "-m", "playwright", "install", "chromium"],
+            capture_output=True, timeout=300,
         )
-        return result.returncode == 0
+        return True
     except Exception:
         return False
 
@@ -1063,19 +1060,7 @@ def _playwright_fill(url: str, answers: dict, resume_bytes: bytes, resume_name: 
 
     try:
         with sync_playwright() as pw:
-            try:
-                browser = pw.chromium.launch(headless=True)
-            except Exception as _launch_err:
-                if "Executable doesn't exist" in str(_launch_err):
-                    # Binary missing — install now and retry once
-                    import subprocess, sys
-                    subprocess.run(
-                        [sys.executable, "-m", "playwright", "install", "chromium", "--with-deps"],
-                        timeout=300,
-                    )
-                    browser = pw.chromium.launch(headless=True)
-                else:
-                    raise
+            browser = pw.chromium.launch(headless=True)
             ctx     = browser.new_context(accept_downloads=True)
             page    = ctx.new_page()
             page.set_default_timeout(15000)
