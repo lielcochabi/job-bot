@@ -82,7 +82,7 @@ def search(
 
     # Auto-expire old jobs before searching
     expiry_days = cfg.get("job_expiry_days", 30)
-    expired = database.expire_old_jobs(days=expiry_days)
+    expired = database.cleanup_old_jobs(days=expiry_days)
     if expired:
         console.print(f"  [dim]Removed {expired} expired jobs (older than {expiry_days} days)[/dim]")
 
