@@ -1,4 +1,4 @@
-﻿"""
+"""
 Search multiple job boards and return raw job listings.
 Sources:
   1. RemoteOK (free, no auth, remote jobs)
