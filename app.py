@@ -1694,11 +1694,8 @@ elif "Search" in page:
         selection_mode="multi",
         label_visibility="collapsed",
     )
-    # Auto-save categories immediately so they survive page changes
-    if sorted(_sel_cats or []) != sorted(_saved_cats or []):
-        _cfg_live = load_config()
-        _cfg_live["selected_categories"] = list(_sel_cats or [])
-        save_config(_cfg_live)
+    # Keep selection in session state only — saved to DB on search
+    st.session_state["_pending_cats"] = list(_sel_cats or [])
 
     # Derive titles from selected categories + any custom titles saved in Settings
     _from_cats: list[str] = []
@@ -1751,13 +1748,9 @@ elif "Search" in page:
             label_visibility="collapsed",
             key=f"search_ms_{st.session_state['search_title_ver']}",
         )
-        # Persist in session and auto-save to config so next visit restores selection
+        # Keep in session state only — saved to DB on search
         st.session_state["search_title_default"] = list(selected_titles)
-        _saved_titles = load_config().get("selected_titles", [])
-        if sorted(selected_titles) != sorted(_saved_titles):
-            _cfg_live2 = load_config()
-            _cfg_live2["selected_titles"] = list(selected_titles)
-            save_config(_cfg_live2)
+        st.session_state["_pending_titles"] = list(selected_titles)
 
     _loc_opts = ["Israel (on-site + remote)", "Remote only", "Worldwide"]
     if "search_loc" not in st.session_state:
@@ -1782,7 +1775,20 @@ elif "Search" in page:
         st.warning("Select at least one job title.")
 
     if st.button("Start search", type="primary", disabled=not _can_search):
-        enabled_sources = cfg.get("selected_sources", [])
+        # Persist categories + titles to DB only now (one write on search, not on every click)
+        _pending_cats   = st.session_state.get("_pending_cats",   list(_sel_cats or []))
+        _pending_titles = st.session_state.get("_pending_titles", list(selected_titles))
+        _saved_cfg = load_config()
+        _changed = (
+            sorted(_pending_cats)   != sorted(_saved_cfg.get("selected_categories", [])) or
+            sorted(_pending_titles) != sorted(_saved_cfg.get("selected_titles", []))
+        )
+        if _changed:
+            _saved_cfg["selected_categories"] = _pending_cats
+            _saved_cfg["selected_titles"]      = _pending_titles
+            save_config(_saved_cfg)
+
+        enabled_sources = _saved_cfg.get("selected_sources", [])
         cmd = [PYTHON, "-u", "main.py", "search"]
         for q in selected_titles:
             cmd.extend(["-q", q])
