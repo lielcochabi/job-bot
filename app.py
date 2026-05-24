@@ -1,12 +1,12 @@
 """
 Streamlit entry point — run: streamlit run app.py
-(Render and start_ui.bat use this file at the project root.)
+
+Streamlit Cloud and Render expect app.py at the repo root. The UI lives in
+ui/app.py; we execute it here so Streamlit owns the script run (import-only
+wrappers break on Cloud).
 """
-import sys
 from pathlib import Path
+import runpy
 
-_ROOT = Path(__file__).resolve().parent
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
-
-import ui.app  # noqa: F401 — registers the Streamlit UI
+_UI_APP = Path(__file__).resolve().parent / "ui" / "app.py"
+runpy.run_path(str(_UI_APP), run_name="__main__")
