@@ -1643,7 +1643,7 @@ if "Dashboard" in page:
                else ":material/radio_button_unchecked:")
         _bc = "green" if s == "done" else "blue" if s == "active" else "gray"
         st.caption(f"Step {num}")
-        _tit, _hb = st.columns([5, 1])
+        _tit, _hb = st.columns([5, 1], vertical_alignment="center")
         with _tit:
             st.markdown(f"{_ic} **{title}**")
         with _hb:
@@ -1652,19 +1652,8 @@ if "Dashboard" in page:
         if l:
             st.badge(l, color=_bc)
 
-    _sc = st.columns(4)
-
-    with _sc[0].container(border=True, height="stretch"):
-        _step_content(1, "Upload resume",  "Settings → Resume tab.",                               s0, l0, "upload_resume")
-    with _sc[1].container(border=True, height="stretch"):
-        _step_content(2, "Search jobs",    "Israeli & remote boards.",                              s1, l1, "search")
-    with _sc[2].container(border=True, height="stretch"):
-        _step_content(3, "Score matches",  "AI scoring (Llama 3)." if _has_ai else "Rule-based.",  s2, l2, "score_matches")
-    with _sc[3].container(border=True, height="stretch"):
-        _step_content(4, "Apply",          "Review and apply.",                                     s3, l3, "apply")
-
-    def _step_action_btn(col, label, *, key, help_section, on_click=None, disabled=False):
-        _b, _h = col.columns([5, 1])
+    def _step_action_btn(label, *, key, help_section, on_click=None, disabled=False):
+        _b, _h = st.columns([5, 1], vertical_alignment="center")
         with _b:
             if st.button(label, key=key, use_container_width=True, disabled=disabled):
                 if on_click:
@@ -1676,24 +1665,28 @@ if "Dashboard" in page:
         if _has_resume:
             launch_task([PYTHON, "-u", "main.py"] + _mcmd, "task_rematch")
 
-    _step_action_btn(_sc[0], "Open Settings →", key="sc1", help_section="upload_resume", on_click=lambda: _go("Settings"))
-    _step_action_btn(_sc[1], "Open Search →", key="sc2", help_section="search", on_click=lambda: _go("Search"))
-    _step_action_btn(
-        _sc[2], _mlabel, key="sc3_btn", help_section="score_matches",
-        on_click=_launch_score, disabled=not _has_jobs,
-    )
-    _step_action_btn(
-        _sc[3], "Open Apply →", key="sc4", help_section="apply",
-        on_click=lambda: _go("Apply"), disabled=not _has_matches,
-    )
+    _sc = st.columns(4)
+
+    with _sc[0].container(border=True, height="stretch"):
+        _step_content(1, "Upload resume",  "Settings → Resume tab.",                               s0, l0, "upload_resume")
+        _step_action_btn("Open Settings →", key="sc1", help_section="upload_resume", on_click=lambda: _go("Settings"))
+    with _sc[1].container(border=True, height="stretch"):
+        _step_content(2, "Search jobs",    "Israeli & remote boards.",                              s1, l1, "search")
+        _step_action_btn("Open Search →", key="sc2", help_section="search", on_click=lambda: _go("Search"))
+    with _sc[2].container(border=True, height="stretch"):
+        _step_content(3, "Score matches",  "AI scoring (Llama 3)." if _has_ai else "Rule-based.",  s2, l2, "score_matches")
+        _step_action_btn(_mlabel, key="sc3_btn", help_section="score_matches", on_click=_launch_score, disabled=not _has_jobs)
+    with _sc[3].container(border=True, height="stretch"):
+        _step_content(4, "Apply",          "Review and apply.",                                     s3, l3, "apply")
+        _step_action_btn("Open Apply →", key="sc4", help_section="apply", on_click=lambda: _go("Apply"), disabled=not _has_matches)
 
     def _metric_with_help(label: str, value, help_section: str, key: str):
         with st.container(border=True):
-            _ml, _mh = st.columns([5, 1])
-            with _mh:
-                _help_btn(help_section, key=f"help_metric_{key}")
+            _ml, _mh = st.columns([5, 1], vertical_alignment="center")
             with _ml:
                 st.metric(label, value)
+            with _mh:
+                _help_btn(help_section, key=f"help_metric_{key}")
 
     with st.container(horizontal=True):
         _metric_with_help(":material/search: Found", stats["total"], "search", "found")
@@ -1709,7 +1702,7 @@ if "Dashboard" in page:
     _qa1, _qa_gap1, _qa2, _qa_gap2, _qa3 = st.columns([1, 0.18, 1, 0.18, 1])
 
     def _quick_action(col, label, *, key, help_section, primary=False, disabled=False, on_click=None):
-        _b, _h = col.columns([5, 1])
+        _b, _h = col.columns([5, 1], vertical_alignment="center")
         with _b:
             if st.button(
                 label,
