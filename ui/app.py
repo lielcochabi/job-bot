@@ -1537,6 +1537,25 @@ def _go(page_fragment: str):
             break
     st.rerun()
 
+
+def _go_help(section: str):
+    """Open Help with a specific topic expanded."""
+    st.session_state["help_section"] = section
+    _go("Help")
+
+
+def _help_btn(section: str, key: str):
+    """Small ? button — jumps to the matching Help topic."""
+    if st.button(
+        ":material/help_outline:",
+        key=key,
+        type="tertiary",
+        help="What does this mean?",
+        use_container_width=True,
+    ):
+        _go_help(section)
+
+
 if "nav_page" not in st.session_state:
     st.session_state["nav_page"] = _PAGES[0]
 
@@ -1579,13 +1598,21 @@ with st.sidebar:
 
 if "Dashboard" in page:
     st.title(":material/dashboard: Dashboard")
+    _hint_l, _hint_r = st.columns([5, 1])
+    with _hint_l:
+        st.caption(
+            ":material/info: Look at **Help** before starting — tap any "
+            ":material/help_outline: icon next to a label to jump to that explanation."
+        )
+    with _hint_r:
+        if st.button("Open Help", key="dash_open_help", use_container_width=True, type="secondary"):
+            _go_help("overview")
 
     if _is_guest:
         st.info("You're browsing as a guest. Log in to use all features.")
 
     _has_resume  = _has_resume_cached(_username)
     _has_jobs    = stats["total"] > 0
-    _has_unscored = stats.get("found", 0) > 0
     _has_matches = stats["matched"] > 0
     _has_ai      = bool(os.environ.get("OPENROUTER_API_KEY"))
 
@@ -1593,12 +1620,10 @@ if "Dashboard" in page:
         _active = 0
     elif not _has_jobs:
         _active = 1
-    elif _has_unscored:
-        _active = 2
     elif not _has_matches:
-        _active = 3
+        _active = 2
     else:
-        _active = 4
+        _active = 3
 
     def _step(i):
         if i < _active:  return "done",   "#34d399", "Done"
@@ -1609,82 +1634,108 @@ if "Dashboard" in page:
     s1, c1, l1 = _step(1)
     s2, c2, l2 = _step(2)
     s3, c3, l3 = _step(3)
-    s4, c4, l4 = _step(4)
     _mlabel = "Score with AI" if _has_ai else "Score matches"
     _mcmd   = ["rematch", "--ai"] if _has_ai else ["rematch"]
 
-    def _step_content(num, title, desc, s, l):
+    def _step_content(num, title, desc, s, l, help_section: str):
         _ic = (":material/check_circle:"              if s == "done"
                else ":material/radio_button_checked:" if s == "active"
                else ":material/radio_button_unchecked:")
         _bc = "green" if s == "done" else "blue" if s == "active" else "gray"
         st.caption(f"Step {num}")
-        st.markdown(f"{_ic} **{title}**")
+        _tit, _hb = st.columns([5, 1])
+        with _tit:
+            st.markdown(f"{_ic} **{title}**")
+        with _hb:
+            _help_btn(help_section, key=f"help_step_{help_section}")
         st.caption(desc)
-        if l: st.badge(l, color=_bc)
+        if l:
+            st.badge(l, color=_bc)
 
-    _sc = st.columns(5)
+    _sc = st.columns(4)
 
     with _sc[0].container(border=True, height="stretch"):
-        _step_content(1, "Upload resume",   "Settings → Resume tab.",                               s0, l0)
+        _step_content(1, "Upload resume",  "Settings → Resume tab.",                               s0, l0, "upload_resume")
     with _sc[1].container(border=True, height="stretch"):
-        _step_content(2, "Search jobs",     "Israeli & remote boards.",                              s1, l1)
+        _step_content(2, "Search jobs",    "Israeli & remote boards.",                              s1, l1, "search")
     with _sc[2].container(border=True, height="stretch"):
-        _step_content(3, "Review matches",  "Browse listings before scoring.",                        s2, l2)
+        _step_content(3, "Score matches",  "AI scoring (Llama 3)." if _has_ai else "Rule-based.",  s2, l2, "score_matches")
     with _sc[3].container(border=True, height="stretch"):
-        _step_content(4, "Score matches",   "AI scoring (Llama 3)." if _has_ai else "Rule-based.",   s3, l3)
-    with _sc[4].container(border=True, height="stretch"):
-        _step_content(5, "Apply",           "Submit to matched roles.",                               s4, l4)
+        _step_content(4, "Apply",          "Review and apply.",                                     s3, l3, "apply")
 
-    if _sc[0].button("Open Settings →", key="sc1", use_container_width=True):
-        _go("Settings")
-    if _sc[1].button("Open Search →", key="sc2", use_container_width=True):
-        _go("Search")
-    if _sc[2].button("Review matches →", key="sc3_review", use_container_width=True, disabled=not _has_jobs):
-        _go("Review matches")
-    if _sc[3].button(_mlabel, key="sc4_score", use_container_width=True, disabled=not _has_jobs):
+    def _step_action_btn(col, label, *, key, help_section, on_click=None, disabled=False):
+        _b, _h = col.columns([5, 1])
+        with _b:
+            if st.button(label, key=key, use_container_width=True, disabled=disabled):
+                if on_click:
+                    on_click()
+        with _h:
+            _help_btn(help_section, key=f"help_act_{help_section}")
+
+    def _launch_score():
         if _has_resume:
             launch_task([PYTHON, "-u", "main.py"] + _mcmd, "task_rematch")
-    if _sc[4].button("Open Apply →", key="sc5_apply", use_container_width=True, disabled=not _has_matches):
-        _go("Apply")
+
+    _step_action_btn(_sc[0], "Open Settings →", key="sc1", help_section="upload_resume", on_click=lambda: _go("Settings"))
+    _step_action_btn(_sc[1], "Open Search →", key="sc2", help_section="search", on_click=lambda: _go("Search"))
+    _step_action_btn(
+        _sc[2], _mlabel, key="sc3_btn", help_section="score_matches",
+        on_click=_launch_score, disabled=not _has_jobs,
+    )
+    _step_action_btn(
+        _sc[3], "Open Apply →", key="sc4", help_section="apply",
+        on_click=lambda: _go("Apply"), disabled=not _has_matches,
+    )
+
+    def _metric_with_help(label: str, value, help_section: str, key: str):
+        with st.container(border=True):
+            _ml, _mh = st.columns([5, 1])
+            with _mh:
+                _help_btn(help_section, key=f"help_metric_{key}")
+            with _ml:
+                st.metric(label, value)
 
     with st.container(horizontal=True):
-        st.metric(":material/search: Found",    stats["total"],           border=True)
-        st.metric(":material/stars: Matched",   stats["matched"],         border=True)
-        st.metric(":material/send: Applied",    stats["applied"],         border=True)
-        st.metric(":material/block: Skipped",   stats["skipped"],         border=True)
-        st.metric(":material/percent: Avg score", f'{stats["avg_score"]}%', border=True)
+        _metric_with_help(":material/search: Found", stats["total"], "search", "found")
+        _metric_with_help(":material/stars: Matched", stats["matched"], "score_matches", "matched")
+        _metric_with_help(":material/send: Applied", stats["applied"], "apply", "applied")
+        _metric_with_help(":material/block: Skipped", stats["skipped"], "score_matches", "skipped")
+        _metric_with_help(":material/percent: Avg score", f'{stats["avg_score"]}%', "score_matches", "avg")
 
     if not _has_resume:
         st.caption(":material/info: Start by uploading your resume in **Settings → Resume**.")
 
     st.markdown('<span class="dashboard-quick-actions-marker"></span>', unsafe_allow_html=True)
     _qa1, _qa_gap1, _qa2, _qa_gap2, _qa3 = st.columns([1, 0.18, 1, 0.18, 1])
-    with _qa1:
-        if st.button(
-            "Search →",
-            use_container_width=True,
-            type="primary" if _active == 1 else "secondary",
-            key="dash_qa_search",
-        ):
-            _go("Search")
-    with _qa2:
-        if st.button(
-            "Review matches",
-            use_container_width=True,
-            type="primary" if _active == 2 else "secondary",
-            disabled=not _has_jobs,
-            key="dash_qa_review",
-        ):
-            _go("Review matches")
-    with _qa3:
-        if st.button(
-            "Full pipeline",
-            use_container_width=True,
-            disabled=not _has_resume,
-            key="dash_qa_pipeline",
-        ):
-            launch_task([PYTHON, "-u", "main.py", "run", "--auto"], "task_run")
+
+    def _quick_action(col, label, *, key, help_section, primary=False, disabled=False, on_click=None):
+        _b, _h = col.columns([5, 1])
+        with _b:
+            if st.button(
+                label,
+                use_container_width=True,
+                type="primary" if primary else "secondary",
+                key=key,
+                disabled=disabled,
+            ):
+                if on_click:
+                    on_click()
+        with _h:
+            _help_btn(help_section, key=f"help_qa_{help_section}")
+
+    _quick_action(
+        _qa1, "Search →", key="dash_qa_search", help_section="search",
+        primary=(_active == 1), on_click=lambda: _go("Search"),
+    )
+    _quick_action(
+        _qa2, "Review matches", key="dash_qa_review", help_section="review_matches",
+        disabled=not _has_jobs, on_click=lambda: _go("Review matches"),
+    )
+    _quick_action(
+        _qa3, "Full pipeline", key="dash_qa_pipeline", help_section="full_pipeline",
+        disabled=not _has_resume,
+        on_click=lambda: launch_task([PYTHON, "-u", "main.py", "run", "--auto"], "task_run"),
+    )
 
     for key, label in [("task_run", "Full Pipeline"), ("task_rematch", "Score"), ("task_search", "Search")]:
         if st.session_state.get(key):
@@ -2260,79 +2311,92 @@ elif "Settings" in page:
 
 elif "Help" in page:
     st.title(":material/help: Help")
-    st.caption("How to use Job Bot from start to finish.")
+    st.caption("How to use Job Bot from start to finish. Use the **?** icons on the Dashboard to jump here.")
 
-    st.markdown("""
-    ### How it works
+    _help_focus = st.session_state.pop("help_section", None)
 
-    Job Bot automates job searching in 4 steps. Follow them in order.
+    _HELP_TOPICS: list[tuple[str, str, str]] = [
+        ("overview", "Getting started", """
+Job Bot automates job searching in **4 steps**. Follow them in order on the Dashboard.
 
-    ---
+1. **Upload resume** — Settings → Resume  
+2. **Search jobs** — fetch listings from job boards  
+3. **Score matches** — rank jobs against your profile  
+4. **Apply** — work through strong matches  
 
-    **Step 1 — Upload your resume** (Settings → Resume)
+Tap **?** next to any Dashboard label to open the matching section below.
+        """),
+        ("upload_resume", "Step 1 — Upload your resume", """
+Go to **Settings → Resume** and upload a PDF or DOCX.
 
-    Upload a PDF or DOCX. The bot reads your skills, experience, and role title from it
-    and uses this to score how well each job matches your profile.
+The bot reads your skills, experience, and role title from the file and uses that
+to score how well each job matches your profile. Re-upload anytime you update your CV.
+        """),
+        ("search", "Step 2 — Search jobs", """
+Open the **Search** page, pick categories and job titles, choose location (Israel / remote / worldwide),
+then click **Start search**.
 
-    ---
+The bot scans multiple job boards (RemoteOK, Remotive, Jobicy, Drushim, and more — configurable in Settings).
+Results are saved to your database; running search again only **adds new** listings.
 
-    **Step 2 — Search jobs** (Search page)
+**Found** (on the Dashboard) = total jobs stored from searches.
+        """),
+        ("review_matches", "Optional — Review matches", """
+**Not required** for the main workflow. Use **Review matches** (sidebar or Dashboard button) to browse
+**unscored** listings after a search. Open postings, **Skip** roles you do not want, then run **Score matches**.
 
-    The bot scans up to 8 job boards simultaneously:
-    RemoteOK, Arbeitnow, The Muse, HN Who's Hiring, Remotive, Jobicy, Working Nomads, Himalayas.
+Helpful when you want to clean the list before scoring.
+        """),
+        ("score_matches", "Step 3 — Score matches", """
+On the Dashboard, click **Score matches** or **Score with AI** (if OpenRouter is configured).
 
-    Pick which job titles to search for and which sites to include, then click **Start search**.
-    Results are saved to the database — running search again only adds new listings.
+Each job gets a **0–100** match score:
 
-    ---
+- **Rule-based** — free, fast; checks skills, seniority, location, and language  
+- **AI (Llama 3)** — reads the full description; needs `OPENROUTER_API_KEY`  
 
-    **Step 3 — Review matches** (Review matches page)
+Jobs at or above your threshold (default **70%**) become **Matched**. Others are **Skipped**.
 
-    After a search, browse unscored listings. Open postings, skip roles you are not interested in,
-    then move on to scoring.
+**Matched**, **Skipped**, and **Avg score** on the Dashboard refer to this step.
+        """),
+        ("apply", "Step 4 — Apply", """
+Open the **Apply** page for jobs marked **Matched**.
 
-    ---
+For each listing you can:
 
-    **Step 4 — Score matches** (Dashboard → Score matches)
+- **Open** — view the posting  
+- **Mark applied** — log it and remove from the queue  
+- **Keep for later** — hide for this session  
+- **Not interested** — skip permanently  
+- **Apply with AI** — pre-fill forms when configured  
 
-    Each saved job gets a score from 0–100 based on how well it matches your resume.
+Track outcomes later on the **Tracker** page.
+        """),
+        ("full_pipeline", "Full pipeline button", """
+Runs the entire flow automatically: **search → score → apply queue** (up to the apply limit).
 
-    - **Rule-based scoring** — fast, free, works always. Checks skills, seniority, location, language.
-    - **AI scoring (Llama 3)** — smarter, uses your OpenRouter API key. Reads the full job description.
+Use when your resume and Settings are already set up. You can still review results on each page afterward.
+        """),
+        ("pages", "All pages", """
+| Page | What it does |
+|------|----------------|
+| **Dashboard** | Overview, stats, and quick actions |
+| **Search** | Run job searches across boards |
+| **Review matches** | *(Optional)* Browse unscored jobs before scoring |
+| **Apply** | Work through matched jobs |
+| **Tracker** | Interview / Accepted / Denied status |
+| **Settings** | Resume, sources, threshold, profile, blacklist |
+| **Help** | This guide |
+        """),
+        ("tips", "Tips", """
+- Run **Search** every few days to keep listings fresh.  
+- Old unapplied jobs are removed automatically (see **Expire jobs** in Settings).  
+- Lower or raise the **score threshold** in Settings if too few or too many jobs match.  
+- Add companies to the **blacklist** to skip them automatically.  
+        """),
+    ]
 
-    Jobs scoring ≥70% are marked as **Matched** and appear on the Apply page.
-
-    ---
-
-    **Step 5 — Apply** (Apply page)
-
-    Review each matched job. For every listing you can:
-    - **Open** — go to the job posting
-    - **Mark applied** — records it as applied, removes from the queue
-    - **Keep for later** — hides it this session
-    - **Not interested** — removes it permanently
-
-    ---
-
-    ### Pages
-
-    | Page | What it does |
-    |---|---|
-    | Dashboard | Overview, step guide, quick actions |
-    | Search | Run job searches across multiple boards |
-    | Review matches | Browse unscored listings before scoring; skip unwanted roles |
-    | Apply | Work through matched jobs one by one |
-    | Tracker | Update application status (Interview, Accepted, Denied) |
-    | Settings | Configure job titles, matching threshold, profile, resume |
-
-    ---
-
-    ### Tips
-
-    - Run **Search** once a day or every few days to keep listings fresh.
-    - Old jobs (not applied) are automatically deleted after 7 days.
-    - Adjust the **score threshold** in Settings if too many or too few jobs match.
-    - Add companies to the **blacklist** in Settings to automatically skip them.
-    - The **Full pipeline** button on the Dashboard runs all 3 steps (search + score + apply queue) in one go.
-    """)
+    for section_id, title, body in _HELP_TOPICS:
+        with st.expander(title, expanded=(section_id == (_help_focus or "overview"))):
+            st.markdown(body.strip())
 
