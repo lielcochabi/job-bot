@@ -1,13 +1,7 @@
 """
 Tests for tracker.get_tracker_stats()
 """
-import sys
-from pathlib import Path
-
-# Add project root to path so we can import tracker
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from tracker import get_tracker_stats  # noqa: E402
+from job_bot.tracker import get_tracker_stats
 
 
 def _make_jobs(*statuses: str) -> list[dict]:

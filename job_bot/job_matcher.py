@@ -10,7 +10,7 @@ import os
 import re
 from typing import Optional
 
-import database
+from job_bot import database
 
 # ---------------------------------------------------------------------------
 # Skill weights — edit these to match your own skills

@@ -22,7 +22,8 @@ from email.mime.text import MIMEText
 from pathlib import Path
 from typing import Optional
 
-import database
+from job_bot import database
+from job_bot.paths import DATA_DIR, MANUAL_QUEUE_PATH
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +136,7 @@ def send_whatsapp(job: dict, method: str) -> None:
         print(f"    [WhatsApp] Could not send: {e}")
 
 
-MANUAL_QUEUE_PATH = Path(__file__).parent / "manual_apply.csv"
+# MANUAL_QUEUE_PATH — see job_bot.paths
 
 
 # ---------------------------------------------------------------------------
@@ -163,8 +164,8 @@ def _best_resume_path() -> Optional[Path]:
         Path.home() / "OneDrive" / "Documents",
     ]
     # Also check for uploaded resume in the bot directory
-    bot_dir = Path(__file__).parent
-    for p in bot_dir.glob("uploaded_resume*"):
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    for p in DATA_DIR.glob("uploaded_resume*"):
         if p.suffix.lower() in (".pdf", ".docx"):
             found.append(p)
 
@@ -410,6 +411,7 @@ Best regards,
 
 def queue_manual(job: dict) -> None:
     """Add job to manual review CSV for human application."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
     fields = ["id", "title", "company", "location", "url", "match_score", "salary"]
     write_header = not MANUAL_QUEUE_PATH.exists()
 
@@ -438,7 +440,7 @@ def submit_job(
     """
     url = job.get("url", "")
 
-    import tracker as _tracker
+    from job_bot import tracker as _tracker
 
     _uname = os.environ.get("JOB_BOT_USERNAME", "")
 

@@ -6,10 +6,8 @@
 *.db
 *.db-journal
 user_data/
-manual_apply.csv
+data/
 jobs_to_score.json
-trackers/
-uploaded_resume.*
 
 # Temp logs from UI task runner
 *.log

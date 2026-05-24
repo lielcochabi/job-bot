@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
-import database
+from job_bot import database
 
 RESUME_SEARCH_PATHS = [
     Path.home() / "Desktop",

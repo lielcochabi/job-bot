@@ -309,9 +309,9 @@ def load_config() -> dict:
     doc = db.configs.find_one({"username": _uname()})
     if doc:
         return doc.get("config", {})
-    from pathlib import Path
-    root_cfg = Path(__file__).parent / "config.json"
-    if root_cfg.exists():
+    from job_bot.paths import DEFAULT_CONFIG_PATH
+    if DEFAULT_CONFIG_PATH.exists():
+        root_cfg = DEFAULT_CONFIG_PATH
         import json
         return json.loads(root_cfg.read_text(encoding="utf-8"))
     return {}

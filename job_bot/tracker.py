@@ -11,8 +11,9 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-TRACKER_DIR = Path(__file__).parent / "trackers"
-TRACKER_DIR.mkdir(exist_ok=True)
+from job_bot.paths import TRACKER_DIR
+
+TRACKER_DIR.mkdir(parents=True, exist_ok=True)
 
 COLUMNS = [
     "Date Applied",

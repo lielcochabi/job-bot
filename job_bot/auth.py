@@ -72,10 +72,10 @@ def _seed_config(db, username: str):
     """Copy root config.json into MongoDB configs collection for new user."""
     if db.configs.find_one({"username": username}):
         return
-    from pathlib import Path
     import json
-    root_cfg = Path(__file__).parent / "config.json"
-    if root_cfg.exists():
+    from job_bot.paths import DEFAULT_CONFIG_PATH
+    if DEFAULT_CONFIG_PATH.exists():
+        root_cfg = DEFAULT_CONFIG_PATH
         cfg = json.loads(root_cfg.read_text(encoding="utf-8"))
         db.configs.insert_one({"username": username, "config": cfg})
 

@@ -15,7 +15,7 @@ An automated job application bot that searches multiple job boards, scores listi
 | **Location filter** | Hard-blocks non-remote jobs outside Israel |
 | **Company blacklist** | Skip jobs from companies you don't want |
 | **Auto-apply** | LinkedIn Easy Apply (Playwright) or email when a contact address is found |
-| **Manual queue** | Falls back to `manual_apply.csv` for jobs that need human action |
+| **Manual queue** | Falls back to `data/manual_apply.csv` for jobs that need human action |
 | **Email notifications** | Clear subject line: ✅ auto-applied vs ⚠️ action required |
 | **Excel tracker** | Per-user `.xlsx` with status tracking (Applied / Interview / Accepted / Denied) |
 | **Streamlit UI** | Dashboard, search, matched jobs, apply, tracker, and settings pages |
@@ -40,7 +40,7 @@ cp .env.example .env
 # Fill in NOTIFY_EMAIL, GMAIL_APP_PASSWORD in .env
 
 # 4. Launch UI
-start_ui.bat        # Windows
+scripts/start_ui.bat   # Windows
 # or: streamlit run app.py
 ```
 
@@ -58,8 +58,8 @@ start_ui.bat        # Windows
 | `LINKEDIN_EMAIL` | LinkedIn login (for Easy Apply) |
 | `LINKEDIN_PASSWORD` | LinkedIn password |
 
-### `config.json`
-Set up via the **Settings** page in the UI, or run:
+### `config/config.json` (seed) / Settings UI
+Per-user settings live in MongoDB. The default template is `config/config.json`. Set up via the **Settings** page in the UI, or run:
 ```bash
 python main.py setup
 ```
@@ -85,7 +85,7 @@ python main.py setup       # First-time setup wizard
 
 ## Application Tracker
 
-Every processed job is logged to `trackers/tracker_<email>.xlsx` with columns:
+CLI apply also logs to `data/trackers/tracker_<username>.xlsx`. The UI Tracker uses MongoDB. Excel columns:
 
 `Date Applied` · `Job Title` · `Company` · `Location` · `Match Score` · `Salary` · `URL` · `Method` · **`Status`** · `Notes`
 
@@ -97,7 +97,7 @@ Update statuses from the **📊 Tracker** page in the UI, or directly in the Exc
 
 ## Daily Auto-Run
 
-Right-click `schedule_daily.bat` → **Run as administrator** to register a Windows Task Scheduler job that runs the full pipeline every day at 8:00 AM.
+Right-click `scripts/schedule_daily.bat` → **Run as administrator** to register a Windows Task Scheduler job that runs the full pipeline every day at 8:00 AM.
 
 ---
 
@@ -114,18 +114,31 @@ pytest tests/ -v
 
 ```
 job-bot/
-├── app.py              # Streamlit UI
-├── main.py             # CLI entry point (Typer)
-├── job_searcher.py     # Multi-source job search
-├── job_matcher.py      # Rule-based scoring engine
-├── job_submitter.py    # Apply via LinkedIn / email / manual queue
-├── tracker.py          # Excel application tracker
-├── database.py         # MongoDB persistence
-├── resume_parser.py    # PDF/DOCX resume parser
-├── secrets_manager.py  # .env / Streamlit Cloud secrets
-├── tests/              # pytest test suite
-├── trackers/           # Per-user Excel tracker files (git-ignored)
-├── .flake8             # Linter config
-├── schedule_daily.bat  # Windows Task Scheduler setup
-└── start_ui.bat        # Launch the UI
+├── app.py                 # Streamlit entry (imports ui/app.py)
+├── main.py                # CLI entry (Typer)
+├── job_bot/               # Core Python package
+│   ├── cli.py             # CLI commands
+│   ├── database.py        # MongoDB persistence
+│   ├── job_searcher.py    # Multi-source job search
+│   ├── job_matcher.py     # Rule-based scoring engine
+│   ├── job_submitter.py   # Apply via LinkedIn / email / manual queue
+│   ├── tracker.py         # Excel application tracker (CLI)
+│   ├── resume_parser.py   # PDF/DOCX resume parser
+│   ├── auth.py            # User accounts & sessions
+│   └── secrets_manager.py # .env / Streamlit Cloud secrets
+├── ui/
+│   └── app.py             # Streamlit UI implementation
+├── config/
+│   ├── config.json        # Default settings template
+│   └── job_categories.json
+├── data/                  # Runtime files (git-ignored)
+│   ├── trackers/          # Per-user Excel files (CLI)
+│   └── manual_apply.csv
+├── scripts/
+│   ├── start_ui.bat
+│   ├── schedule_daily.bat
+│   └── run.bat
+├── tests/
+├── .streamlit/
+└── requirements.txt
 ```
