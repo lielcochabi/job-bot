@@ -464,28 +464,42 @@ def _handle_google_callback() -> bool:
 
 
 # Auto-login from persistent cookie
-# streamlit-cookies-controller is a React component: on the very first render
-# the JS hasn't mounted yet so .get() returns None even if a cookie exists.
-# We do one silent rerun to let the component communicate its values, then read.
-if "username" not in st.session_state and _cookie_available:
-    if not st.session_state.get("_cookie_init_done"):
-        # First render — component not mounted yet; rerun once to pick up cookies
-        st.session_state["_cookie_init_done"] = True
-        st.rerun()
-    else:
-        # Second render — cookies are now available
-        try:
-            _saved_token = _cookie_ctrl.get(_COOKIE_NAME)
-            if _saved_token:
-                _saved_uname = auth.validate_token(_saved_token)
-                if _saved_uname:
-                    st.session_state["username"]   = _saved_uname
-                    st.session_state["auth_token"] = _saved_token
-                else:
-                    # Token expired — clear the stale cookie
+# Primary: st.context.cookies reads from the HTTP request headers — available
+# on the very first render, no React component or rerun required.
+# Fallback: CookieController for cases where st.context.cookies is unavailable.
+if "username" not in st.session_state:
+    _saved_token = None
+
+    # --- Primary: native Streamlit cookie access (Streamlit >= 1.37) ---
+    try:
+        _saved_token = st.context.cookies.get(_COOKIE_NAME)
+    except Exception:
+        pass
+
+    # --- Fallback: streamlit-cookies-controller (needs one rerun to mount) ---
+    if not _saved_token and _cookie_available:
+        if not st.session_state.get("_cookie_init_done"):
+            st.session_state["_cookie_init_done"] = True
+            st.rerun()
+        else:
+            try:
+                _saved_token = _cookie_ctrl.get(_COOKIE_NAME)
+            except Exception:
+                pass
+
+    # Validate and restore session
+    if _saved_token:
+        _saved_uname = auth.validate_token(_saved_token)
+        if _saved_uname:
+            st.session_state["username"]   = _saved_uname
+            st.session_state["auth_token"] = _saved_token
+        else:
+            # Token expired — remove stale cookie
+            if _cookie_available:
+                try:
                     _cookie_ctrl.remove(_COOKIE_NAME)
-        except Exception:
-            pass
+                except Exception:
+                    pass
 
 # Handle Google OAuth redirect callback
 if "username" not in st.session_state:
