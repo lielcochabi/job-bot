@@ -186,7 +186,7 @@ st.markdown("""
         font-weight: 500 !important;
         font-size: 0.83rem !important;
         padding: 0.42rem 1.1rem !important;
-        min-height: 2.6rem !important;
+        min-height: 3.4rem !important;
         border: 1px solid #1e2c42 !important;
         background: #0f1826 !important;
         color: #8b98b0 !important;
@@ -1666,7 +1666,7 @@ if "Dashboard" in page:
             st.badge(l, color=_bc)
 
     def _step_action_btn(label, *, key, help_section, on_click=None, disabled=False):
-        _l, _b, _h, _r = st.columns([0.5, 5, 0.9, 0.5], vertical_alignment="center")
+        _b, _h = st.columns([5, 1], vertical_alignment="center")
         with _b:
             if st.button(label, key=key, use_container_width=True, disabled=disabled):
                 if on_click:
