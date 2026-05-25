@@ -463,19 +463,28 @@ def _handle_google_callback() -> bool:
 
 
 # Auto-login from persistent cookie
+# streamlit-cookies-controller is a React component: on the very first render
+# the JS hasn't mounted yet so .get() returns None even if a cookie exists.
+# We do one silent rerun to let the component communicate its values, then read.
 if "username" not in st.session_state and _cookie_available:
-    try:
-        _saved_token = _cookie_ctrl.get(_COOKIE_NAME)
-        if _saved_token:
-            _saved_uname = auth.validate_token(_saved_token)
-            if _saved_uname:
-                st.session_state["username"]   = _saved_uname
-                st.session_state["auth_token"] = _saved_token
-            else:
-                # Token expired — clear the stale cookie
-                _cookie_ctrl.remove(_COOKIE_NAME)
-    except Exception:
-        pass
+    if not st.session_state.get("_cookie_init_done"):
+        # First render — component not mounted yet; rerun once to pick up cookies
+        st.session_state["_cookie_init_done"] = True
+        st.rerun()
+    else:
+        # Second render — cookies are now available
+        try:
+            _saved_token = _cookie_ctrl.get(_COOKIE_NAME)
+            if _saved_token:
+                _saved_uname = auth.validate_token(_saved_token)
+                if _saved_uname:
+                    st.session_state["username"]   = _saved_uname
+                    st.session_state["auth_token"] = _saved_token
+                else:
+                    # Token expired — clear the stale cookie
+                    _cookie_ctrl.remove(_COOKIE_NAME)
+        except Exception:
+            pass
 
 # Handle Google OAuth redirect callback
 if "username" not in st.session_state:
