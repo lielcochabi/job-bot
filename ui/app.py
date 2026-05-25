@@ -186,6 +186,7 @@ st.markdown("""
         font-weight: 500 !important;
         font-size: 0.83rem !important;
         padding: 0.42rem 1.1rem !important;
+        min-height: 2.6rem !important;
         border: 1px solid #1e2c42 !important;
         background: #0f1826 !important;
         color: #8b98b0 !important;
@@ -812,7 +813,10 @@ def render_task_panel(task_key: str, title: str) -> bool:
 
 @st.fragment(run_every=0.5)
 def live_task_panel(task_key: str, title: str):
-    render_task_panel(task_key, title)
+    still_running = render_task_panel(task_key, title)
+    if not still_running:
+        # Task just finished — bust stats cache so the numbers refresh immediately
+        _get_stats.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -1515,7 +1519,7 @@ def _init_db_once():
     database.init_db()
     return True
 
-@st.cache_data(ttl=30, show_spinner=False)
+@st.cache_data(ttl=5, show_spinner=False)
 def _get_stats(username: str) -> dict:
     return database.get_stats()
 
@@ -1692,7 +1696,7 @@ if "Dashboard" in page:
     with _sc[2]:
         _step_action_btn(_mlabel, key="sc3_btn", help_section="score_matches", on_click=_launch_score, disabled=not _has_jobs)
     with _sc[3]:
-        _step_action_btn("Open Apply →", key="sc4", help_section="apply", on_click=lambda: _go("Apply"), disabled=not _has_matches)
+        _step_action_btn("Open Apply →", key="sc4", help_section="apply", on_click=lambda: _go("Apply"))
 
     def _metric_with_help(label: str, value, help_section: str, key: str):
         with st.container(border=True):
@@ -1713,7 +1717,7 @@ if "Dashboard" in page:
         st.caption(":material/info: Start by uploading your resume in **Settings → Resume**.")
 
     st.markdown('<span class="dashboard-quick-actions-marker"></span>', unsafe_allow_html=True)
-    _qa1, _qa_gap1, _qa2, _qa_gap2, _qa3 = st.columns([1, 0.18, 1, 0.18, 1])
+    _qa1, _qa_gap, _qa2 = st.columns([1, 0.12, 1])
 
     def _quick_action(col, label, *, key, help_section, primary=False, disabled=False, on_click=None):
         _b, _h = col.columns([5, 1], vertical_alignment="center")
@@ -1731,15 +1735,11 @@ if "Dashboard" in page:
             _help_btn(help_section, key=f"help_qa_{help_section}")
 
     _quick_action(
-        _qa1, "Search →", key="dash_qa_search", help_section="search",
-        primary=(_active == 1), on_click=lambda: _go("Search"),
-    )
-    _quick_action(
-        _qa2, "Review matches", key="dash_qa_review", help_section="review_matches",
+        _qa1, "Review matches", key="dash_qa_review", help_section="review_matches",
         disabled=not _has_jobs, on_click=lambda: _go("Review matches"),
     )
     _quick_action(
-        _qa3, "Full pipeline", key="dash_qa_pipeline", help_section="full_pipeline",
+        _qa2, "Full pipeline", key="dash_qa_pipeline", help_section="full_pipeline",
         disabled=not _has_resume,
         on_click=lambda: launch_task([PYTHON, "-u", "main.py", "run", "--auto"], "task_run"),
     )
@@ -1752,6 +1752,8 @@ if "Dashboard" in page:
         st.caption("Remove all unmatched/unapplied jobs so you can start a fresh search for a different field.")
         if st.button(":material/delete: Clear all non-applied jobs", type="secondary"):
             _deleted = database.cleanup_old_jobs(days=0)  # days=0 wipes everything unapplied
+            _get_stats.clear()          # force fresh stats on next render
+            _has_resume_cached.clear()
             st.toast(f"Removed {_deleted} jobs.", icon=":material/check:")
             st.rerun()
 
