@@ -1434,16 +1434,16 @@ def _card(job: dict, key_prefix: str = "card", *,
                 _bi += 1
             if apply_btns:
                 if _bcols[_bi].button("Mark applied",   key=f"ma_{key_prefix}_{jid}", use_container_width=True):
-                    database.set_applied(jid); st.rerun()
+                    database.set_applied(jid); _get_stats.clear(); st.rerun()
                 _bi += 1
                 if _bcols[_bi].button("Keep for later", key=f"kl_{key_prefix}_{jid}", use_container_width=True):
                     st.session_state.setdefault("snoozed_jobs", set()).add(jid); st.rerun()
                 _bi += 1
                 if _bcols[_bi].button("Not interested", key=f"ni_{key_prefix}_{jid}", use_container_width=True):
-                    database.set_match(jid, 0, json.dumps({"reason": "Not interested"})); st.rerun()
+                    database.set_match(jid, 0, json.dumps({"reason": "Not interested"})); _get_stats.clear(); st.rerun()
             elif skip_btn:
                 if _bcols[_bi].button("Skip", key=f"sk_{key_prefix}_{jid}", use_container_width=True):
-                    database.set_match(jid, 0, json.dumps({"reason": "Manually skipped"})); st.rerun()
+                    database.set_match(jid, 0, json.dumps({"reason": "Manually skipped"})); _get_stats.clear(); st.rerun()
 
         # AI auto-apply (only in Apply mode)
         if apply_btns:
@@ -1494,6 +1494,7 @@ def _card(job: dict, key_prefix: str = "card", *,
                     # Only mark as applied if the form was actually submitted
                     if _form_status in ("sent", "partial"):
                         database.set_applied(jid, "AI Form")
+                    _get_stats.clear()
                     st.rerun()
 
             # ── Show results panel ─────────────────────────────────────────────
@@ -1550,7 +1551,7 @@ def _load_config_cached(username: str) -> dict:
     return database.load_config()
 
 _init_db_once()
-_startup_cfg = database.load_config()
+_startup_cfg = _load_config_cached(_username)   # use cache, not a raw DB call
 _cleanup_once(_username, int(_startup_cfg.get("job_expiry_days", 30)))
 stats = _get_stats(_username)
 
@@ -2210,7 +2211,8 @@ elif "Settings" in page:
             text = rp.extract_text(resume_path)
             if text and not text.startswith("["):
                 database.save_resume(str(resume_path), text)
-                database.save_resume_file(uploaded.name, _raw_bytes)   # store bytes for form uploads
+                database.save_resume_file(uploaded.name, _raw_bytes)
+                _has_resume_cached.clear()   # dashboard reflects upload immediately
                 profile_data = rp.extract_resume_profile(text)
                 st.session_state["auto_profile"] = profile_data
                 st.toast(f"Parsed {uploaded.name} — {len(text):,} characters", icon=":material/check:")
