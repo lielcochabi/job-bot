@@ -356,37 +356,63 @@ st.markdown("""
 
 auth.init_auth_db()
 
-try:
-    from streamlit_cookies_controller import CookieController as _CC
-    _cookie_ctrl = _CC()
-    _cookie_available = True
-except Exception:
-    _cookie_ctrl = None
-    _cookie_available = False
-
 _COOKIE_NAME = "job_bot_auth"
-_COOKIE_DAYS = 90   # remember for 90 days
+_COOKIE_DAYS = 90
 
 
-def _do_login(username: str, remember: bool):
+def _set_cookie(name: str, value: str, days: int) -> None:
+    """Write a browser cookie using a hidden st.components iframe (same-origin JS)."""
+    import streamlit.components.v1 as _cv1
+    max_age = days * 86400
+    _cv1.html(
+        f"""<script>
+        (function(){{
+            var c='{name}={value};max-age={max_age};path=/;SameSite=Lax';
+            try{{window.parent.document.cookie=c;}}catch(e){{}}
+            try{{document.cookie=c;}}catch(e){{}}
+        }})();
+        </script>""",
+        height=0,
+    )
+
+
+def _delete_cookie(name: str) -> None:
+    """Expire a browser cookie via JS."""
+    import streamlit.components.v1 as _cv1
+    _cv1.html(
+        f"""<script>
+        (function(){{
+            var c='{name}=;max-age=0;path=/;SameSite=Lax';
+            try{{window.parent.document.cookie=c;}}catch(e){{}}
+            try{{document.cookie=c;}}catch(e){{}}
+        }})();
+        </script>""",
+        height=0,
+    )
+
+
+def _read_cookie(name: str) -> str:
+    """Read a cookie from the HTTP request headers (available on first render)."""
+    try:
+        return st.context.cookies.get(name, "")
+    except Exception:
+        return ""
+
+
+def _do_login(username: str, remember: bool) -> None:
     days  = _COOKIE_DAYS if remember else 1
     token = auth.create_token(username, days=days)
     st.session_state["username"]   = username
     st.session_state["auth_token"] = token
     if remember:
-        # Don't set cookie here — st.rerun() follows login and cancels the
-        # current render before the browser executes the JS.
-        # Store it and write on the next render (main app, no rerun follows).
+        # Store token — cookie is written on the next render (main app)
+        # so the JS executes before any subsequent rerun.
         st.session_state["_pending_cookie"] = (token, days)
 
 
-def _do_logout():
+def _do_logout() -> None:
     auth.revoke_token(st.session_state.get("auth_token", ""))
-    if _cookie_available:
-        try:
-            _cookie_ctrl.remove(_COOKIE_NAME)
-        except Exception:
-            pass
+    _delete_cookie(_COOKIE_NAME)
     for k in ["username", "auth_token", "page_loaded"]:
         st.session_state.pop(k, None)
 
@@ -463,43 +489,16 @@ def _handle_google_callback() -> bool:
     return True
 
 
-# Auto-login from persistent cookie
-# Primary: st.context.cookies reads from the HTTP request headers — available
-# on the very first render, no React component or rerun required.
-# Fallback: CookieController for cases where st.context.cookies is unavailable.
+# Auto-login — reads cookie from HTTP request headers (first render, no rerun needed)
 if "username" not in st.session_state:
-    _saved_token = None
-
-    # --- Primary: native Streamlit cookie access (Streamlit >= 1.37) ---
-    try:
-        _saved_token = st.context.cookies.get(_COOKIE_NAME)
-    except Exception:
-        pass
-
-    # --- Fallback: streamlit-cookies-controller (needs one rerun to mount) ---
-    if not _saved_token and _cookie_available:
-        if not st.session_state.get("_cookie_init_done"):
-            st.session_state["_cookie_init_done"] = True
-            st.rerun()
-        else:
-            try:
-                _saved_token = _cookie_ctrl.get(_COOKIE_NAME)
-            except Exception:
-                pass
-
-    # Validate and restore session
+    _saved_token = _read_cookie(_COOKIE_NAME)
     if _saved_token:
         _saved_uname = auth.validate_token(_saved_token)
         if _saved_uname:
             st.session_state["username"]   = _saved_uname
             st.session_state["auth_token"] = _saved_token
         else:
-            # Token expired — remove stale cookie
-            if _cookie_available:
-                try:
-                    _cookie_ctrl.remove(_COOKIE_NAME)
-                except Exception:
-                    pass
+            _delete_cookie(_COOKIE_NAME)   # stale/expired token
 
 # Handle Google OAuth redirect callback
 if "username" not in st.session_state:
@@ -609,14 +608,11 @@ _is_guest = st.session_state.get("is_guest", False)
 # Point the database module at this user's data
 database.set_username(_username)
 
-# Write the persistent cookie here — this render has no immediate rerun,
-# so the browser has time to execute the JS before the next interaction.
-if "_pending_cookie" in st.session_state and _cookie_available:
-    try:
-        _tok, _days = st.session_state.pop("_pending_cookie")
-        _cookie_ctrl.set(_COOKIE_NAME, _tok, max_age=_days * 86400)
-    except Exception:
-        pass
+# Write the persistent cookie now — this render has no immediate rerun,
+# so the JS executes before the user's next interaction.
+if "_pending_cookie" in st.session_state:
+    _tok, _days = st.session_state.pop("_pending_cookie")
+    _set_cookie(_COOKIE_NAME, _tok, _days)
 
 
 def _guest_block():
