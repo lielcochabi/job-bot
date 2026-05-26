@@ -2,7 +2,7 @@ name: Keep App Awake
 
 on:
   schedule:
-    - cron: '*/8 * * * *'   # every 8 minutes
+    - cron: '*/30 * * * *'  # every 30 minutes
   workflow_dispatch:          # allow manual trigger from GitHub UI
 
 jobs:
