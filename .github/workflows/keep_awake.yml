@@ -1,0 +1,45 @@
+name: Keep App Awake
+
+on:
+  schedule:
+    - cron: '*/8 * * * *'   # every 8 minutes
+  workflow_dispatch:          # allow manual trigger from GitHub UI
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Playwright
+        run: |
+          pip install playwright
+          playwright install chromium --with-deps
+
+      - name: Visit app (opens real browser → establishes WebSocket)
+        run: |
+          python - << 'EOF'
+          import sys, time
+          from playwright.sync_api import sync_playwright
+
+          URL = "https://jobfindingbot.streamlit.app"
+
+          with sync_playwright() as p:
+              browser = p.chromium.launch(headless=True)
+              page    = browser.new_page()
+              try:
+                  print(f"Loading {URL} …")
+                  page.goto(URL, wait_until="networkidle", timeout=60_000)
+                  time.sleep(8)   # hold the WebSocket open long enough for Streamlit to register the visit
+                  print("Done — app is awake")
+              except Exception as e:
+                  print(f"Warning: {e}", file=sys.stderr)
+                  sys.exit(0)     # don't fail the workflow on transient errors
+              finally:
+                  browser.close()
+          EOF
