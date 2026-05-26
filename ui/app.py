@@ -373,11 +373,11 @@ def _do_login(username: str, remember: bool):
     token = auth.create_token(username, days=days)
     st.session_state["username"]   = username
     st.session_state["auth_token"] = token
-    if remember and _cookie_available:
-        try:
-            _cookie_ctrl.set(_COOKIE_NAME, token, max_age=days * 86400)
-        except Exception:
-            pass
+    if remember:
+        # Don't set cookie here — st.rerun() follows login and cancels the
+        # current render before the browser executes the JS.
+        # Store it and write on the next render (main app, no rerun follows).
+        st.session_state["_pending_cookie"] = (token, days)
 
 
 def _do_logout():
@@ -608,6 +608,15 @@ _is_guest = st.session_state.get("is_guest", False)
 
 # Point the database module at this user's data
 database.set_username(_username)
+
+# Write the persistent cookie here — this render has no immediate rerun,
+# so the browser has time to execute the JS before the next interaction.
+if "_pending_cookie" in st.session_state and _cookie_available:
+    try:
+        _tok, _days = st.session_state.pop("_pending_cookie")
+        _cookie_ctrl.set(_COOKIE_NAME, _tok, max_age=_days * 86400)
+    except Exception:
+        pass
 
 
 def _guest_block():
