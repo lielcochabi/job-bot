@@ -11,9 +11,11 @@ import tempfile
 import threading
 import time
 import urllib.parse
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import streamlit as st
+import extra_streamlit_components as stx
 
 _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
@@ -291,8 +293,18 @@ st.markdown("""
                     0 8px 32px rgba(0,0,0,0.5);
     }
 
-    /* ── Hide Streamlit chrome ── */
-    #MainMenu, footer, header { visibility: hidden; }
+    /* ── Hide Streamlit chrome (but keep the header so the sidebar
+          expand/collapse toggle stays usable on fresh browsers) ── */
+    #MainMenu, footer { visibility: hidden; }
+    [data-testid="stToolbar"], [data-testid="stDecoration"] { display: none !important; }
+    [data-testid="stHeader"] { background: transparent !important; }
+    /* keep the sidebar open/close control visible & on top */
+    [data-testid="stSidebarCollapsedControl"],
+    [data-testid="collapsedControl"] {
+        visibility: visible !important;
+        display: flex !important;
+        z-index: 999999 !important;
+    }
 
     /* ── Kill the rerun dim/flash ── */
     .stApp, .stApp > *, .main, .stMain,
@@ -360,41 +372,36 @@ _COOKIE_NAME = "job_bot_auth"
 _COOKIE_DAYS = 90
 
 
+# A single CookieManager instance per script run. It renders a real bidirectional
+# Streamlit component (not a sandboxed parent-document hack), so it reads & writes
+# cookies correctly on Streamlit Cloud where component iframes are cross-origin.
+# Must be created once per run and reused for get/set/delete to avoid duplicate keys.
+_COOKIES = stx.CookieManager(key="job_bot_cookie_mgr")
+
+
 def _set_cookie(name: str, value: str, days: int) -> None:
-    """Write a browser cookie using a hidden st.components iframe (same-origin JS)."""
-    import streamlit.components.v1 as _cv1
-    max_age = days * 86400
-    _cv1.html(
-        f"""<script>
-        (function(){{
-            var c='{name}={value};max-age={max_age};path=/;SameSite=Lax';
-            try{{window.parent.document.cookie=c;}}catch(e){{}}
-            try{{document.cookie=c;}}catch(e){{}}
-        }})();
-        </script>""",
-        height=0,
+    """Persist a browser cookie via the CookieManager component."""
+    _COOKIES.set(
+        name,
+        value,
+        expires_at=datetime.now() + timedelta(days=days),
+        same_site="lax",
+        key=f"cm_set_{name}",
     )
 
 
 def _delete_cookie(name: str) -> None:
-    """Expire a browser cookie via JS."""
-    import streamlit.components.v1 as _cv1
-    _cv1.html(
-        f"""<script>
-        (function(){{
-            var c='{name}=;max-age=0;path=/;SameSite=Lax';
-            try{{window.parent.document.cookie=c;}}catch(e){{}}
-            try{{document.cookie=c;}}catch(e){{}}
-        }})();
-        </script>""",
-        height=0,
-    )
+    """Expire a browser cookie via the CookieManager component."""
+    # Only attempt deletion if the cookie is actually present, otherwise the
+    # component raises on a missing key.
+    if _COOKIES.get(name):
+        _COOKIES.delete(name, key=f"cm_del_{name}")
 
 
 def _read_cookie(name: str) -> str:
-    """Read a cookie from the HTTP request headers (available on first render)."""
+    """Read a cookie value. Returns '' until the component has loaded."""
     try:
-        return st.context.cookies.get(name, "")
+        return _COOKIES.get(name) or ""
     except Exception:
         return ""
 
