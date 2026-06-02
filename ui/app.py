@@ -66,6 +66,24 @@ st.markdown("""
     }
 
     /* ── Sidebar ── */
+    /* Force the sidebar to ALWAYS be visible and expanded. Streamlit otherwise
+       collapses it on narrow viewports / remembered state, and once collapsed
+       the expand toggle can be missing — leaving users with no navigation. */
+    section[data-testid="stSidebar"],
+    section[data-testid="stSidebar"][aria-expanded="false"] {
+        transform: none !important;
+        visibility: visible !important;
+        display: flex !important;
+        min-width: 240px !important;
+        max-width: 240px !important;
+        width: 240px !important;
+        margin-left: 0 !important;
+        left: 0 !important;
+    }
+    /* keep the inner content rendered even if Streamlit tries to hide it */
+    section[data-testid="stSidebar"] > div {
+        visibility: visible !important;
+    }
     [data-testid="stSidebar"] {
         background: #0a0f1a !important;
         border-right: 1px solid #161e2e !important;
